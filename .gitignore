@@ -1,0 +1,14 @@
+# Source code or compiled files #
+**/*.cc
+**/*.mex*
+
+# Matlab data #
+**/*.mat
+**/*.asv
+**/*.slxc
+**/slprj/*
+
+# Images files
+# **/*.eps
+# **/*.png
+# **/*.jpg

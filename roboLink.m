@@ -1,23 +1,34 @@
 classdef roboLink
-    %ROBOLINK Summary of this class goes here
-    %   Detailed explanation goes here
-    
+    % ROBOLINK - Robotic arm manipulator link
+    %   Generate robotic arm link object used to generate roboTree objects
+    %   It is possible to associate to each roboLink object multiple
+    %   roboJoint in order to compose complex structures
+
     properties
-        Property1
+        Name            (1, :)  char
+        Joint           {mustBeA(Joint, 'roboJoint')} = roboJoint('joint')
     end
-    
+
+    properties (SetAccess = protected)
+        Parent                  cell = {};
+        Child                   cell = {};
+    end
+
     methods
-        function obj = roboLink(inputArg1,inputArg2)
-            %ROBOLINK Construct an instance of this class
-            %   Detailed explanation goes here
-            obj.Property1 = inputArg1 + inputArg2;
+        % --- Constructors --- %
+        function obj = roboLink(Name, varargin)
+            % roboLink - Class constructor
+            % Syntax
+            %   roboLink(Name)
+            %
+            % Input
+            %   Name - joint name
+            %       char
+
+            obj.Name = Name;
         end
+
         
-        function outputArg = method1(obj,inputArg)
-            %METHOD1 Summary of this method goes here
-            %   Detailed explanation goes here
-            outputArg = obj.Property1 + inputArg;
-        end
     end
 end
 
