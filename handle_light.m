@@ -6,9 +6,9 @@ classdef handle_light < handle
       function notify(varargin)
          notify@handle(varargin{:});
       end
-      function delete(varargin)
-         delete@handle(varargin{:});
-      end
+      % function delete(varargin)
+      %    delete@handle(varargin{:});
+      % end
       function Hmatch = findobj(varargin)
          Hmatch = findobj@handle(varargin{:});
       end
@@ -33,8 +33,8 @@ classdef handle_light < handle
       function TF = ge(varargin)
          TF = ge@handle(varargin{:});
       end
-      % function TF = isvalid(varargin)
-      %    TF = isvalid@handle(varargin{:});
-      % end
+      function TF = listener(varargin)
+         TF = listener@handle(varargin{:});
+      end
    end
 end
