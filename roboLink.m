@@ -7,7 +7,8 @@ classdef roboLink < handle_light
     %   Parent - index 
     %
     % roboLink Methods:
-    %   roboLink - Constructor
+    %   roboLink        - Constructor
+    %   copyRigidBody   - Copy a rigidBody object to a roboLink object
 
     properties
         % Name - Link name
@@ -25,7 +26,7 @@ classdef roboLink < handle_light
 
     % ------------------------------------------------------------------- %
 
-    properties (SetAccess = protected)
+    properties (SetAccess = {?roboArm})
         % Parent - index of the link's parent in the roboArm object
         %   default = [] | double
         Parent double = []
@@ -39,17 +40,75 @@ classdef roboLink < handle_light
 
     methods
         % --- Constructor --- %
-        function obj = roboLink(Name, varargin)
+        function obj = roboLink(varargin)
             % roboLink - Class constructor
             %
             % Syntax
+            %   roboLink(rigidBodyObj)
             %   roboLink(Name)
             %   roboLink(Name, Joint)
             %
+            % Input:
+            %   rigidBodyObj - rigidBody object
+            %       rigidBody
             % See also NAME, JOINT
 
-            obj.Name = Name;
-            if nargin > 1, obj.Joint = varargin{1}; end
+            if (nargin == 0) || (nargin > 2)
+                error("Wrong number of parameters passed, check constructor syntax")
+            end
+
+            if (nargin > 0) && (~isempty(varargin{1}))
+                switch class(varargin{1})
+                    case 'rigidBody', obj.copyRigidBody(varargin{1})
+                    case 'char', obj.Name = varargin{1};
+                    otherwise, error("Wrong passed parameter, check constructor syntax")
+                end
+            end
+
+            if (nargin > 1) && (~isempty(varargin{2}))
+                obj.Joint = varargin{2};
+            end
+        end
+
+        % --------------------------------------------------------------- %
+
+        function copyRigidBody(obj, rigidBodyObj)
+            % copyRigidJoint - Copy a rigidBody object to a roboLink object
+            %
+            % Syntax
+            %   copyRigidBody(rigidBodyObj)
+            %
+            % Input:
+            %   rigidBodyObj - rigidBody object
+            %       rigidBody
+
+            if ~isa(rigidBodyObj, 'rigidBody')
+                error("Wrong passed parameter, check syntax")
+            end
+
+            obj.Name = rigidBodyObj.Name;
+            obj.Joint = roboJoint(rigidBodyObj.Joint);
+        end
+
+        % --------------------------------------------------------------- %
+
+        function plot(obj, varargin)
+            % plot - Plot the joint frames
+            % If all the frames are requested:
+            %   - dotted line: parent frame (joint frame without joint movement)
+            %   - full line: current joint frame
+            %   - dashed line: children base frame
+            %
+            % Syntax
+            %   plot()
+            %   plot(jointValue)
+            %   plot(..., char array) | char array in {'all', 'joint'} (default = 'joint')
+            %
+            % Input:
+            %   jointValue - joint value
+            %       rad or m | default = HomePosition | double
+            
+            obj.Joint.plot(varargin{:})
         end
     end
 

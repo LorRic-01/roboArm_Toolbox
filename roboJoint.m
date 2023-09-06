@@ -15,6 +15,8 @@ classdef roboJoint < handle_light
     %   roboJoint           - Constructor
     %   setJointAxis        - Set the axis of rotation/translation of the joint
     %   setFixedTransform   - Set transformation between frames
+    %   plot                - show joint frames
+    %   copyRigidBodyJoint  - Copy a rigidBodyJoint object to a roboJoint object
 
     properties
         % Name - Joint name
@@ -55,33 +57,53 @@ classdef roboJoint < handle_light
 
     % ------------------------------------------------------------------- %
 
+    properties (SetAccess = protected, Hidden = true)
+        % A - Joint transformation homogeneous matrix
+        %   belong to SE(3) | default = eye(4) | double(4, 4) or MX.sym
+        A
+    end
+
+    % ------------------------------------------------------------------- %
 
     methods
         % --- Constructor --- %
-        function obj = roboJoint(Name, varargin)
+        function obj = roboJoint(varargin)
             % roboJoint - Class constructor
             %
             % Syntax
+            %   roboJoint(rigidBodyJointObj)
             %   roboJoint(Name)
             %   roboJoint(Name, Type)
             %   roboJoint(Name, Type, PositionLimits)
             %   roboJoint(Name, Type, PositionLimits, HomePosition)
             %
+            % Input:
+            %   rigidBodyJointObj - rigidBodyJoint object
+            %       rigidBodyJoint
             % See also NAME, TYPE, POSITIONLIMITS, HOMEPOSITION
 
-
-            obj.Name = Name;
-
-            if (nargin > 2) && (~isempty(varargin{1}))
-                obj.Type = varargin{1};
+            if (nargin == 0) || (nargin > 4)
+                error("Wrong number of parameters passed, check constructor syntax")
             end
 
-            if (nargin > 3) && (~isempty(varargin{2}))
-                obj.PositionLimits = varargin{2}; obj.PositionLimits = sort(varargin{2});
+            if (nargin > 0) && (~isempty(varargin{1}))
+                switch class(varargin{1})
+                    case 'rigidBodyJoint', obj.copyRigidBodyJoint(varargin{1})
+                    case 'char', obj.Name = varargin{1};
+                    otherwise, error("Wrong passed parameter, check constructor syntax")
+                end
             end
 
-            if (nargin > 4) && (~isempty(varargin{3}))
-                obj.HomePosition = varargin{3};
+            if (nargin > 1) && (~isempty(varargin{2}))
+                obj.Type = varargin{2};
+            end
+
+            if (nargin > 2) && (~isempty(varargin{3}))
+                obj.PositionLimits = varargin{3}; obj.PositionLimits = sort(varargin{3});
+            end
+
+            if (nargin > 3) && (~isempty(varargin{4}))
+                obj.HomePosition = varargin{4};
             end
         end
 
@@ -155,7 +177,7 @@ classdef roboJoint < handle_light
         % --------------------------------------------------------------- %
 
         function plot(obj, varargin)
-            % plot - Plot the joint frames.
+            % plot - Plot the joint frames
             % If all the frames are requested:
             %   - dotted line: parent frame (joint frame without joint movement)
             %   - full line: current joint frame
@@ -164,20 +186,20 @@ classdef roboJoint < handle_light
             % Syntax
             %   plot()
             %   plot(jointValue)
-            %   plot(..., char array) | char array in {'all', 'joint'} (default = 'joint') 
+            %   plot(..., char array) | char array in {'all', 'parent', 'joint', 'child'} (default = 'joint') 
             %
             % Input:
             %   jointValue - joint value
             %       rad or m | default = HomePosition | double
             
             if (nargin > 1) && ischar(varargin{end})
-                allPlot = true;
+                mode = varargin{end};
                 if (nargin > 2) && ~isempty(varargin{1})
                     jointValue = varargin{1};
                 else, jointValue = obj.HomePosition;
                 end
             else
-                allPlot = false;
+                mode = 'joint';
                 if (nargin > 1) && ~isempty(varargin{1})
                     jointValue = varargin{1};
                 else, jointValue = obj.HomePosition;
@@ -191,11 +213,47 @@ classdef roboJoint < handle_light
             end
 
             A = [R, T; 0, 0, 0, 1];
-            tools.framePlot(obj.Parent*A, obj.Name, '-')
-            if allPlot
-                tools.framePlot(obj.Parent, [obj.Name, '_{Parent}'], ':')
-                tools.framePlot(obj.Parent*A*obj.Child, [obj.Name, '_{Child}'], '--')
+
+            switch mode
+                case 'parent', tools.framePlot(obj.Parent, [obj.Name, '_{Parent}'], ':')
+                case 'joint', tools.framePlot(obj.Parent*A, obj.Name, '-')
+                case 'child', tools.framePlot(obj.Parent*A*obj.Child, [obj.Name, '_{Child}'], '--')
+                case 'all'
+                    tools.framePlot(obj.Parent, [obj.Name, '_{Parent}'], ':')
+                    tools.framePlot(obj.Parent*A, obj.Name, '-')
+                    tools.framePlot(obj.Parent*A*obj.Child, [obj.Name, '_{Child}'], '--')
+                otherwise
+                    warning('Wrong display char passed. Display onlu joint frame')
+                    tools.framePlot(obj.Parent*A, obj.Name, '-')
             end
+        end
+        
+        % --------------------------------------------------------------- %
+
+        function copyRigidBodyJoint(obj, rigidBodyJointObj)
+            % copyRigidBodyJoint - Copy a rigidBodyJoint object to a
+            % roboJoint object
+            %
+            % Syntax
+            %   copyRigidBodyJoint(rigidBodyJointObj)
+            %
+            % Input:
+            %   rigidBodyJointObj - rigidBodyJoint object
+            %       rigidBodyJoint
+
+            if ~isa(rigidBodyJointObj, 'rigidBodyJoint')
+                error("Wrong passed parameter, check syntax")
+            end
+
+            obj.Name = rigidBodyJointObj.Name;
+            obj.Type = rigidBodyJointObj.Type;
+            if all(~isnan(rigidBodyJointObj.JointAxis))
+                obj.JointAxis = rigidBodyJointObj.JointAxis;
+            end
+            obj.PositionLimits = rigidBodyJointObj.PositionLimits;
+            obj.HomePosition = rigidBodyJointObj.HomePosition;
+            obj.Parent = rigidBodyJointObj.JointToParentTransform;
+            obj.Child = rigidBodyJointObj.ChildToJointTransform;
         end
 
     end

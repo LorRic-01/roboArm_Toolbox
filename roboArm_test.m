@@ -1,10 +1,11 @@
-% ROBOJOINT_TEST Test roboJoint class
+% ROBOARM_TEST Test roboArm class
 clc, clearvars, close all
 
 %% Creation test
-joint1 = roboJoint('j1');
 
-% Joint2parent
+arm = roboArm;
+
+joint1 = roboJoint('j1');
 DHParams = [0, pi/2, 0.5, 0];
 joint1.setFixedTransform(DHParams, 'j2p', 'dh')
 
@@ -15,13 +16,6 @@ joint1.setFixedTransform(DHParams, 'c2j', 'dh');
 joint1.setJointAxis([0, 0, 1])
 joint1.Type = 'prismatic';
 
+link1 = roboLink('l1', joint1);
 
-figure, joint1.plot(1, 'all')
-axis equal, axis padded, grid on, view(3)
-xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]')
-
-%% Copy test
-jnt2 = rigidBodyJoint('jnt2');
-
-joint2 = roboJoint(jnt2);
-jnt2, joint2
+arm.addBody(link1)
