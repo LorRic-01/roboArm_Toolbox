@@ -1,15 +1,11 @@
 classdef tools
     % TOOLS - Auxiliary static class
     %   Implements all the general tools needed in various implementations
-    
-    properties (Access = private, Hidden = true)
-        A (4, 4) double {mustBeSE3(A)} = eye(4)
-        colorAplha (1, 1) double {mustBeNonNan} = 1
-    end
 
     methods (Static)
         function framePlot(A, varargin)
             % framePlot - Plot the frame passed as homogeneous matrix
+            %
             % Syntax
             %   framePlot(A)
             %   framePlot(A, frameName)
@@ -48,6 +44,69 @@ classdef tools
                 text(T(1) + 0.95*R(1, k), T(2) + 0.95*R(2, k), T(3) + 0.95*R(3, k), labelAxis(k))
             end
             hold off
+        end
+
+        % --------------------------------------------------------------- %
+
+        function addCasadiToPath()
+            % addCasadiToPath - Add the casADi folder to path
+            % Folder must be found in the common MATLAB folder (Documents folder)
+            %
+            % Syntax
+            %   addCasadiToPath
+
+            if ispc % Windows
+                [~, user] = system('echo %username%'); user = user(1:end-1);
+                path = ['C:\Users\', user, '\Documents\MATLAB'];
+                % Complete implementation
+            elseif isunix
+                path = '~/Documents/MATLAB';
+                [~, files] = system(['ls ', path]); files = strsplit(files, {' ', '\n'});
+                for k = 1:length(files)
+                    if startsWith(files{k}, 'casadi'), break, end
+                    if k == length(files), error("No casADi folder found in ~/Documents/MATLAB"), end
+                end
+                addpath(['~/Documents/MATLAB/', files{k}])
+            % elseif ismac % missing implementation
+            else, error("Not supported platform available")
+            end
+        end
+
+        % --------------------------------------------------------------- %
+
+        function R = axang2rotm(data)
+            % axang2rotm - Convert axis-angle representation to rotation matrix
+            %
+            % Syntax
+            %   axang2rotm([axis, angle])
+            %
+            % Input:
+            %   axis - Axis of rotation
+            %       double(1, 3)
+            %   angle - Angle of rotation
+            %       double or casadi.SX.sym or casadi.MX.sym
+            %
+            % Output:
+            %   R - rotation matrix
+            %       belong to SO(3) | double(3, 3) or casadi.SX.sym(3, 3) or casadi.MX.sym(3, 3)
+
+            if all(size(data) ~= [1, 4]), error("Wrong dimension of axis-angle representation"), end
+
+            if isnumeric(data(end))
+                I = eye(3);
+            else
+                switch class(data(end))
+                    case 'casadi.SX', I = casadi.SX.eye(3);
+                    case 'casadi.MX', I = casadi.MX.eye(3);
+                end
+            end
+
+            K = [0, -data(3), data(2); data(3), 0, -data(1); -data(2), data(1), 0];
+            R = I + sin(data(end))*K + (1 - cos(data(end)))*K*K;
+            switch class(R)
+                case 'SX.sym', R = simplify(R);
+                case 'MX.sym', R = simplify(R);
+            end
         end
     end
 end

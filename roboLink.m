@@ -9,6 +9,10 @@ classdef roboLink < handle_light
     % roboLink Methods:
     %   roboLink        - Constructor
     %   copyRigidBody   - Copy a rigidBody object to a roboLink object
+    %   plot            - Wrapper of the roboJoint.plot function
+    %   genJointAMatrix - Wrapper of the roboJoint.genJointAMatrix function
+    %
+    % See also roboJoint.plot, roboJoint.genJointAMatrix
 
     properties
         % Name - Link name
@@ -52,6 +56,8 @@ classdef roboLink < handle_light
             %   rigidBodyObj - rigidBody object
             %       rigidBody
             % See also NAME, JOINT
+
+            tools.addCasadiToPath
 
             if (nargin == 0) || (nargin > 2)
                 error("Wrong number of parameters passed, check constructor syntax")
@@ -109,6 +115,22 @@ classdef roboLink < handle_light
             %       rad or m | default = HomePosition | double
             
             obj.Joint.plot(varargin{:})
+        end
+
+        % --------------------------------------------------------------- %
+
+        function genJointAMatrix(obj, varargin)
+            % genJointAMatrix - Generate joint roto-translation simbolic homogeneous matrix
+            %
+            % Syntax
+            %   genJointAMatrix
+            %   genJointAMatrix(var)
+            %
+            % Input:
+            %   var - Symbolic joint variables. If omitted, defined as 'x'
+            %       casadi.SX.sym or casadi.MX.sym
+            
+            obj.Joint.genJointAMatrix(varargin{:})
         end
     end
 

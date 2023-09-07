@@ -10,6 +10,8 @@ classdef roboJoint < handle_light
     %   HomePosition    - Standard position of the joint
     %   Parent          - Roto-translation from the previous joint
     %   Child           - Roto-transaltion of the child(ren)
+    %   Ajoint2B        - Roto-translation homogeneous matrix from joint frame to base frame
+    %   Ajoint          - Joint frame roto-translation homogeneous matrix 
     %
     % roboJoint Methods:
     %   roboJoint           - Constructor
@@ -17,6 +19,7 @@ classdef roboJoint < handle_light
     %   setFixedTransform   - Set transformation between frames
     %   plot                - show joint frames
     %   copyRigidBodyJoint  - Copy a rigidBodyJoint object to a roboJoint object
+    %   genJointAMatrix     - Generate joint roto-translation simbolic homogeneous matrix 
 
     properties
         % Name - Joint name
@@ -44,7 +47,7 @@ classdef roboJoint < handle_light
     % ------------------------------------------------------------------- %
 
 
-    properties (SetAccess = protected)
+    properties (SetAccess = {?roboLink, ?roboArm})
         % Parent - Roto-translation of the current axis joint w.r.t. previous joint axis
         %   belong to SE(3) | default = eye(4) | double(4, 4)
         Parent (4, 4) double {mustBeSE3(Parent), mustBeNonNan} = eye(4)
@@ -52,18 +55,21 @@ classdef roboJoint < handle_light
         % Child - Roto-translation of the next joint(s) axis w.r.t. the current joint axis
         %   belong to SE(3) | default = eye(4) | double(4, 4)
         Child (4, 4) double {mustBeSE3(Child), mustBeNonNan} = eye(4)
+
+        % Ajoint2B - Roto-translation homogeneous matrix from joint frame to base frame
+        %   The roto-translation is referred to the fixed frame to which
+        %   the joint is attached to (bafore joint motion frame) - 
+        %   belong to SE(3) | default = eye(4) | double(4, 4) or casadi.SX or casadi.MX
+        Ajoint2B (4, 4) = eye(4)
+
+        % Ajoint - Joint frame roto-translation homogeneous matrix 
+        %   belong to SE(3) | default = eye(4) | double(4, 4) or casadi.SX or casadi.MX
+        Ajoint (4, 4) = eye(4)
     end
 
 
     % ------------------------------------------------------------------- %
 
-    properties (SetAccess = protected, Hidden = true)
-        % A - Joint transformation homogeneous matrix
-        %   belong to SE(3) | default = eye(4) | double(4, 4) or MX.sym
-        Ajoint 
-    end
-
-    % ------------------------------------------------------------------- %
 
     methods
         % --- Constructor --- %
@@ -82,13 +88,8 @@ classdef roboJoint < handle_light
             %       rigidBodyJoint
             % See also NAME, TYPE, POSITIONLIMITS, HOMEPOSITION
 
-            % Add to path casadi folder
-            if ispc % Windows
-                [~, user] = system('echo %username%'); user = user(1:end-1);
-                
-                
-
-
+            tools.addCasadiToPath
+            
             if (nargin == 0) || (nargin > 4)
                 error("Wrong number of parameters passed, check constructor syntax")
             end
@@ -263,9 +264,45 @@ classdef roboJoint < handle_light
             obj.Child = rigidBodyJointObj.ChildToJointTransform;
         end
 
+        % --------------------------------------------------------------- %
+
+        function genJointAMatrix(obj, varargin)
+            % genJointAMatrix - Generate joint roto-translation simbolic homogeneous matrix
+            %
+            % Syntax
+            %   genJointAMatrix
+            %   genJointAMatrix(var)
+            %
+            % Input:
+            %   var - Symbolic joint variables. If omitted, defined as 'x'
+            %       casadi.casadi.SX or casadi.casadi.MX
+
+            if (nargin < 1) && ~isempty(varargin{1})
+                switch class(varargin{1})
+                    case 'casadi.SX', var = varargin{1};
+                    case 'casadi.MX', var = varargin{1};
+                    otherwise, error("Cannot perform assignment. Necessary casADi symbolic variable")
+                end
+            else
+                var = casadi.SX.sym('x');
+            end
+
+            switch obj.Type
+                case 'revolute', R = tools.axang2rotm([obj.JointAxis, var]); T = [0, 0, 0]';
+                case 'prismatic', R = eye(3); T = var*obj.JointAxis';
+                case 'fixed', R = eye(3); T = [0, 0, 0]'; var = 0;
+            end
+
+            obj.Ajoint = [R, T; 0, 0, 0, 1];
+            switch class(var)
+                case 'casadi.SX', obj.Ajoint = simplify(obj.Ajoint);
+                case 'casadi.MX', obj.Ajoint = simplify(obj.Ajoint);
+            end
+        end
+
     end
 
-
+    
     % ------------------------------------------------------------------- %
 
 

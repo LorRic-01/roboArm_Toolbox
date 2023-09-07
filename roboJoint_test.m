@@ -25,3 +25,6 @@ jnt2 = rigidBodyJoint('jnt2');
 
 joint2 = roboJoint(jnt2);
 jnt2, joint2
+
+%% Symbolic matrix test
+joint1.setJointAMatrix

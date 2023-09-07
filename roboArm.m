@@ -37,11 +37,15 @@ classdef roboArm < handle_light
             %   baseName - Base name
             %       char(1, :)
 
+            tools.addCasadiToPath
+
             if nargin > 0, obj.BodiesName = varargin(1);
             else, obj.BodiesName = {'world'}; end
 
             baseJoint = roboJoint(obj.BodiesName{1}, 'fixed');
-            obj.Bodies = {roboLink(obj.BodiesName{1}, baseJoint)};
+            baseJoint.genJointAMatrix,
+            baseLink = roboLink(obj.BodiesName{1}, baseJoint); baseLink.Parent = 0;
+            obj.Bodies = {baseLink};
         end
 
         % --------------------------------------------------------------- %
@@ -61,22 +65,31 @@ classdef roboArm < handle_light
             index = [];
             if (nargin > 2) && ~isempty(varargin{1})
                 if isnumeric(varargin{1}), index = varargin{1}; end
-                if ischar(varargin{1}), index = find(ismember(varargin{1}, obj.BodiesName)); end
+                if ischar(varargin{1}), [~, index] = ismember(varargin{1}, obj.BodiesName); end
             end
 
             if isempty(index) || isnan(index) || (index < 0)
                 index = 1;
             end
-
+            
             roboLinkObj.Parent = index;
             obj.Bodies{index}.Child(end + 1) = length(obj.Bodies) + 1;
             obj.Bodies{end + 1} = roboLinkObj;
+
+            % Generate joint 2 base frame transformation
+            roboLinkObj.genJointAMatrix
+            index = roboLinkObj.Parent; A = roboLinkObj.Joint.Parent;
+            while (index ~= 0)
+                A = obj.Bodies{index}.Joint.Parent * obj.Bodies{index}.Joint.Ajoint * obj.Bodies{index}.Joint.Child * A;
+                index = obj.Bodies{index}.Parent;
+            end
+            roboLinkObj.Joint.Ajoint2B = A;
         end
 
         % --------------------------------------------------------------- %
 
         function getTransform(obj, varargin)
-            % getTransform 
+            % getTransform - Get the roto-translation homogeneous matrix
         end
     end
 
