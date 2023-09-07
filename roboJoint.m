@@ -60,7 +60,7 @@ classdef roboJoint < handle_light
     properties (SetAccess = protected, Hidden = true)
         % A - Joint transformation homogeneous matrix
         %   belong to SE(3) | default = eye(4) | double(4, 4) or MX.sym
-        A
+        Ajoint 
     end
 
     % ------------------------------------------------------------------- %
@@ -81,6 +81,13 @@ classdef roboJoint < handle_light
             %   rigidBodyJointObj - rigidBodyJoint object
             %       rigidBodyJoint
             % See also NAME, TYPE, POSITIONLIMITS, HOMEPOSITION
+
+            % Add to path casadi folder
+            if ispc % Windows
+                [~, user] = system('echo %username%'); user = user(1:end-1);
+                
+                
+
 
             if (nargin == 0) || (nargin > 4)
                 error("Wrong number of parameters passed, check constructor syntax")
