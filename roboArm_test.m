@@ -33,6 +33,6 @@ joint2.setFixedTransform(DHParams, 'c2j', 'dh');
 joint2.setJointAxis([0, 0, 1])
 joint2.Type = 'revolute';
 
-link2 = roboLink('l2', 'j2');
+link2 = roboLink('l2', joint2);
 
 arm.addBody(link2, 'l1')

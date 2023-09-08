@@ -99,20 +99,9 @@ classdef roboLink < handle_light
         % --------------------------------------------------------------- %
 
         function plot(obj, varargin)
-            % plot - Plot the joint frames
-            % If all the frames are requested:
-            %   - dotted line: parent frame (joint frame without joint movement)
-            %   - full line: current joint frame
-            %   - dashed line: children base frame
+            % plot - Wrapper of the roboJoint.plot function
             %
-            % Syntax
-            %   plot()
-            %   plot(jointValue)
-            %   plot(..., char array) | char array in {'all', 'joint'} (default = 'joint')
-            %
-            % Input:
-            %   jointValue - joint value
-            %       rad or m | default = HomePosition | double
+            % See also roboJoint.plot
             
             obj.Joint.plot(varargin{:})
         end
@@ -120,15 +109,9 @@ classdef roboLink < handle_light
         % --------------------------------------------------------------- %
 
         function genJointAMatrix(obj, varargin)
-            % genJointAMatrix - Generate joint roto-translation simbolic homogeneous matrix
+            % genJointAMatrix - Wrapper of the roboJoint.genJointAMatrix function
             %
-            % Syntax
-            %   genJointAMatrix
-            %   genJointAMatrix(var)
-            %
-            % Input:
-            %   var - Symbolic joint variables. If omitted, defined as 'x'
-            %       casadi.SX.sym or casadi.MX.sym
+            % See also roboJoint.genJointAMatrix
             
             obj.Joint.genJointAMatrix(varargin{:})
         end

@@ -3,27 +3,50 @@ classdef roboArm < handle_light
     %   Generate robotic arm manipulator object and models
     %
     % roboArm Properties:
-    %   
+    %   Gravity     - Gravitational acceleration experienced by the robot
+    %   Bodies      - List of roboLink objects composing the manipulator
+    %   BodiesName  - List of roboLink names
     %
     % roboArm Methods:
+    %   roboArm - Constructor
     %   
 
+
     properties
-        % Bodies - list of roboLink objects composing the manipulator
-        %   default = {wordFixedFictitiousLink} | {roboLink, ...}
-        Bodies {mustBeRoboLinkCell(Bodies)} = {}
-
-        % Bodies - list of roboLink objects composing the manipulator
-        %   default = {'world'} | {char(1, :), ...}
-        BodiesName {mustBeCharCell(BodiesName), mustBeUnique(BodiesName)} = {}
-
         % Gravity - Gravitational acceleration experienced by the robot
         %   m/s^2 | default = [0, 0, 9.8067] | double(1, 3)
         Gravity (1, 3) double = [0, 0, 9.8067]
     end
 
+
     % ------------------------------------------------------------------- %
 
+
+    properties (SetAccess = protected)
+        % Bodies - List of roboLink objects composing the manipulator
+        %   default = {wordFixedFictitiousLink} | {roboLink, ...}
+        Bodies {mustBeRoboLinkCell(Bodies)} = {}
+
+        % BodiesName - List of roboLink names
+        %   default = {'world'} | {char(1, :), ...}
+        BodiesName {mustBeCharCell(BodiesName), mustBeUnique(BodiesName)} = {}
+    end
+
+
+    % ------------------------------------------------------------------- %
+
+
+    properties (SetAccess = protected, Hidden = true)
+        % casadiVars - casADi variables used in the robot descriptions
+        %   default = [] | casadi.SX or casadi.MX
+        casadiVars = [];
+    end
+
+
+    % ------------------------------------------------------------------- %
+
+
+    
     methods
         % --- Constructor --- %
         function obj = roboArm(varargin)

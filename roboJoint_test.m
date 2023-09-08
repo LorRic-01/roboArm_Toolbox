@@ -27,4 +27,5 @@ joint2 = roboJoint(jnt2);
 jnt2, joint2
 
 %% Symbolic matrix test
-joint1.setJointAMatrix
+joint1.genJointAMatrix
+joint1.Ajoint
