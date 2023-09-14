@@ -20,8 +20,6 @@ classdef tools
             %       default = '-' | LineStyle char array
             %       See also matlab.graphics.chart.primitive.Area/LineStyle
 
-            % Frame font dimension
-            font = 10; dim = 2.54/72.272/10*font;
             % Lenght of frame axis
             L = 0.5;
 
@@ -36,12 +34,14 @@ classdef tools
             end
 
             R = L*A(1:3, 1:3); T = A(1:3, 4);
-            text(T(1) - dim, T(2) - dim, T(3) - dim, frameName, 'FontSize', font);
-            colorAxis = 'rgb'; labelAxis = 'xyz'; hold on
+            colorAxis = 'rgb'; hold on
             for k = 1:3
-                quiver3(T(1), T(2), T(3), R(1, k), R(2, k), R(3, k), ...
-                    'Color', colorAxis(k), 'LineWidth', 1, 'LineStyle', quiverLineStyle);
-                text(T(1) + 0.95*R(1, k), T(2) + 0.95*R(2, k), T(3) + 0.95*R(3, k), labelAxis(k))
+                q = quiver3(T(1), T(2), T(3), R(1, k), R(2, k), R(3, k), ...
+                    'Color', colorAxis(k), 'LineWidth', 1, 'LineStyle', quiverLineStyle, ...
+                    'LineWidth', 2);
+                q.DataTipTemplate.DataTipRows = [dataTipTextRow('Frame: ', {frameName}), ...
+                        dataTipTextRow('Pos:   ', {T.'}), dataTipTextRow('RPY:   ', {rotm2eul(R)})];
+                if k == 1, q.Marker = '.'; q.MarkerSize = 15; q.MarkerEdgeColor = 'k'; end
             end
             hold off
         end
@@ -108,14 +108,14 @@ classdef tools
                 case 'MX.sym', R = simplify(R);
             end
         end
-    end
-end
 
-% --- Vaidating function --- %
-function mustBeSE3(data)
-    % mustBeSE3 - Validate that values is in the SE(3) group
-    R = data(1:3, 1:3);    
-    if (~all(data(4, :) == [0, 0, 0, 1])) || ~(max(abs(R.'*R - eye(3)), [], 'all') < 1e-5) || ~(abs(det(R) - 1) < 1e-5)
-        error("Value of property must be a matrix belonging to SE(3) group")
+        % --------------------------------------------------------------- %
+
+        function out = isSE3(data)
+            % mustBeSE3 - Return true if data is in the SE(3) group
+            R = data(1:3, 1:3);
+            out = ~((~all(data(4, :) == [0, 0, 0, 1])) || ~(max(abs(R.'*R - eye(3)), [], 'all') < 1e-5) || ~(abs(det(R) - 1) < 1e-5));
+        end
+
     end
 end

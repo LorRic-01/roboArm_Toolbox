@@ -108,12 +108,12 @@ classdef roboLink < handle_light
 
         % --------------------------------------------------------------- %
 
-        function genJointAMatrix(obj, varargin)
+        function var = genJointAMatrix(obj, varargin)
             % genJointAMatrix - Wrapper of the roboJoint.genJointAMatrix function
             %
             % See also roboJoint.genJointAMatrix
             
-            obj.Joint.genJointAMatrix(varargin{:})
+            var = obj.Joint.genJointAMatrix(varargin{:});
         end
     end
 
