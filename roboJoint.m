@@ -13,13 +13,15 @@ classdef roboJoint < handle_light
     %
     % roboJoint Methods:
     %   roboJoint - Class constructor
-    %   copyRigidBodyJoint - Copy a rigidBodyJoint object to roboJoint one
+    %   setJointAxis - Set joint axis of rotation/translation
     %   setFixedTransform - Set fixed transformation between joint's frames
+    %   plot - Plot joint frames
+    %   copyRigidBodyJoint - Copy a rigidBodyJoint object to roboJoint one
 
     properties
         % Name - Joint name
         %   char array or string
-        Name (1, :) {mustBeCharString, mustBeNonempty} = ' '
+        Name (1, :) {mustBeA(Name, {'char', 'string'}), mustBeNonempty} = ' '
 
         % Type - Type of joint
         %   in {'revolute', 'prismatic', 'fixed'} | default = 'fixed' | char array
@@ -27,11 +29,11 @@ classdef roboJoint < handle_light
 
         % JointAxis - Axis of rotation or translation of the joint
         %   default = [0, 0, 1] | double(1, 3)
-        JointAxis (1, 3) {mustBeNumeric, mustBeNonZeroNorm} = [0, 0, 1]
+        JointAxis (1, 3) {mustBeNumeric, mustBeNonZeroNorm, mustBeNonNan} = [0, 0, 1]
 
         % PositionLimits - Minimum and maximum values reachable by the joint
         %   rad or m | default = [0, 0] | double(1, 2)
-        PositionLimits (1, 2) {mustBeNumeric, mustBeVector, mustBeNonNan} = [0, 0]
+        PositionLimits (1, 2) {mustBeNumeric, mustBeNonNan} = [0, 0]
 
         % HomePosition - Standard position of the joint
         %   rad or m | default = 0 | double
@@ -40,7 +42,7 @@ classdef roboJoint < handle_light
 
     % ------------------------------------------------------------------- %
 
-    properties (SetAccess = {})
+    properties (SetAccess = {?roboLink})
         % j2p - Roto-translation of the current joint axis w.r.t. parent (previous joint axis)
         %   belong to SE(3) | default = eye(4) | double(4, 4)
         j2p (4, 4) {mustBeSE3, mustBeNonNan} = eye(4)
@@ -72,21 +74,27 @@ classdef roboJoint < handle_light
             % Se also NAME, TYPE, POSITIONLIMITS, HOMEPOSITION
 
             arguments
-                Name (1, :) {mustBeNonempty}
+                Name {mustBeA(Name, {'char', 'string', 'rigidBodyJoint'})}
                 Type (1, :) {mustBeMember(Type, {'revolute', 'prismatic', 'fixed'})} = 'fixed'
-                PositionLimits (1, 2) {mustBeNumeric, mustBeVector, mustBeNonNan} = [0, 0]        
+                PositionLimits (1, 2) {mustBeNumeric, mustBeNonNan} = [0, 0]        
                 HomePosition (1, 1) {mustBeNumeric, mustBeNonNan, mustBeFinite} = 0
             end
             
+            % Add casadi to path
             try
                 tools.addCasadiToPath
             catch E
-                warning('off', 'backtrace')
-                warning(getReport(E))
-                warning('Future computation might be affected if not corrected manually');
-                warning('on', 'backtrace')
+                if ismember(E.identifier, {'tools:MissingFolder', 'tools:pathError'}) && ...
+                        strcmp(tools.tim.Running, 'off')
+                    tools.tim.start
+                    warning('off', 'backtrace'), warning(getReport(E, 'extended')) % basic
+                    warning('Future computation might be affected if not corrected manually');
+                    warning('on', 'backtrace')
+                end
+                if ~ismember(E.identifier, {'tools:MissingFolder', 'tools:pathError'}), throw(E), end
             end
-
+            
+            % Object creation
             if isa(Name, 'rigidBodyJoint')
                 obj = roboJoint.copyRigidBodyJoint(Name);
             else
@@ -125,7 +133,7 @@ classdef roboJoint < handle_light
             %   - 'j2p': joint frame w.r.t. parent frame
             % Available types:
             %   - 'A': homogeneous matrix
-            %   - 'dh': Denavit-Hartenberg parameters
+            %   - 'dh', 'DH': Denavit-Hartenberg parameters
             %
             % See also roboJoint.c2j and roboJoint.j2p
             %
@@ -146,13 +154,67 @@ classdef roboJoint < handle_light
                 obj
                 data {mustBeNonempty, mustBeNumeric}
                 frame2frame {mustBeMember(frame2frame, {'c2j', 'j2p'})} = 'c2j'
-                type {mustBeMember(type, {'A', 'dh'})} = 'dh'
+                type {mustBeMember(type, {'A', 'dh', 'DH'})} = 'dh'
             end
 
             switch type
                 case 'A', A = data;
-                case 'dh', A = 0; % --- TO IMPLEMENT --- %
+                case 'dh', A = tools.ADHparams(data);
+                case 'DH', A = tools.ADHparams(data);
             end
+            switch frame2frame
+                case 'c2j', obj.c2j = A;
+                case 'j2p', obj.j2p = A;
+            end
+        end
+
+        % --------------------------------------------------------------- %
+
+        function plot(obj, jointValue, Ajoint2B, specifics)
+            % plot - Plot joint frames
+            % Frame legend
+            %   - dotted line: joint frame without movement ('fixed')
+            %   - full line: joint frame with movement ('moved')
+            %   - dashed line: child(ren) base frame ('child')
+            %
+            % Syntax
+            %   plot
+            %   plot(Ajoint2B)
+            %   plot(Ajoint2B, jointValue)
+            %   plot(jointValue, specifics)
+            %
+            % Input:
+            %   jointValue - joint value
+            %       rad or m | default = HomePosition | double
+            %   Aparent2B - joint parent frame w.r.t. base frame
+            %       belong to SE(3) | default = eye(4) | double(4, 4)
+            %   specifics - frame(s) to show
+            %       in {'all', 'fixed', 'moved', 'child'} | default = 'moved' | char cell array or string array
+
+            arguments
+                obj
+                jointValue (1, 1) {mustBeNumeric} = obj.HomePosition
+                Ajoint2B (4, 4) {mustBeSE3} = obj.j2p
+                specifics {mustBeMember(specifics, {'all', 'fixed', 'moved', 'child'})} = 'moved'
+            end
+            
+            R = eye(3); T = [0, 0, 0].';
+            switch obj.Type
+                case 'revolute', R = axang2rotm([obj.JointAxis, jointValue]);
+                case 'prismatic', T = jointValue*obj.JointAxis.';
+            end
+            A = [R, T; 0, 0, 0, 1];
+
+            if ismember({'fixed'}, specifics) || ismember({'all'}, specifics)
+                tools.plotFrame(Ajoint2B, [obj.Name, '_{fixed}'], ":")
+            end
+            if ismember({'moved'}, specifics) || ismember({'all'}, specifics)
+                tools.plotFrame(Ajoint2B*A, [obj.Name, '_{moved}'], "-")
+            end
+            if ismember({'child'}, specifics) || ismember({'all'}, specifics)
+                tools.plotFrame(Ajoint2B*A*obj.c2j, [obj.Name, '_{child}'], "--")
+            end
+
         end
     end
 
@@ -169,9 +231,13 @@ classdef roboJoint < handle_light
             % Input:
             %   rigidBodyJointObj - rigidBodyJoint object
             %       rigidBodyJoint
+            %
+            % Output:
+            %   roboJointObj - roboJoint object
+            %       roboJoint
             
             arguments
-                rigidBodyJointObj {mustBeRigidBodyJoint}
+                rigidBodyJointObj {mustBeA(rigidBodyJointObj, 'rigidBodyJoint')}
             end
 
             roboJointObj = roboJoint(rigidBodyJointObj.Name, rigidBodyJointObj.Type, ...
@@ -183,23 +249,9 @@ classdef roboJoint < handle_light
             roboJointObj.c2j = rigidBodyJointObj.ChildToJointTransform;
         end
     end
-
 end
-
-
 
 % --- Validating function --- %
-function mustBeCharString(data)
-    % mustBeCharString - Validate that data is char array or string
-    switch class(data)
-        case 'string', return
-        case 'char', return
-        otherwise
-            throw(MException('roboJoint:WrongType', ['Must be char array or ' ...
-                'string, not a %s'], class(data)));
-    end
-end
-
 function mustBeNonZeroNorm(data)
     % mustBeAxis - Validate that data has non zero norm
     if norm(data), return
@@ -213,14 +265,6 @@ function mustBeSE3(data)
     if (~all(data(4, :) == [0, 0, 0, 1]) || ~(max(abs(R.'*R - eye(3)), [], 'all') < 1e-5) ...
             || ~(abs(det(R) - 1) < 1e-5))
         throw(MException('roboJoint:WrongValue', 'Must belong to SE(3) group'));
-    end
-end
-
-function mustBeRigidBodyJoint(data)
-    % mustBeRigidBodyJoint - Validate that data is a rigidBodyJoint object
-    if ~isa(data, 'rigidBodyJoint')
-        throw(MException('roboJoint:WrongType', ['Must be a rigidBodyJoint object, ' ...
-            'not a %s object'], class(data)));
     end
 end
 

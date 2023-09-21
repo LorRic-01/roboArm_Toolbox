@@ -1,4 +1,4 @@
-classdef handle_light < handle & matlab.mixin.Copyable
+classdef handle_light < handle % & matlab.mixin.Copyable
     % handle: passed by reference and not copied
     % matlab.mixin.Copyable: can copy the object despite handle class using copy command
 
