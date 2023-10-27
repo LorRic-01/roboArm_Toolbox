@@ -8,6 +8,7 @@ classdef tools
     %   ADHparams - Generate roto-translation given DH params
     %   plotFrame - Plot homogeneous matrix as a frame
     %   plotCoM - Plot CoM element identifier
+    %   invA - Inverse of homogeneous matrices
     %   vrrotvec - Calculate a rotation between two vectors (Matlab copy)
 
     properties (Constant = true, Hidden = true)
@@ -153,6 +154,31 @@ classdef tools
             z_tmp = z; z_tmp((sign(x).*sign(y) < 0) & (abs(x) > 1e-3)) = nan;
             surf(r*x + pos(1), r*y + pos(2), r*z_tmp + pos(3), 'FaceColor', 'y', 'EdgeColor', 'none')
             hold off
+        end
+
+        % --------------------------------------------------------------- %
+
+        function Ainv = invA(A)
+            % invA - Inverse of homogeneous matrices
+            %
+            % Syntax
+            %   invA(A)
+            %
+            % Input:
+            %   A - Homogeneous matrix
+            %       belong to SE(3) | double(4, 4)
+            % Output:
+            %   Ainv - Inverse of homogeneous matrix A
+            %       belong to SE(3) | double(4, 4)
+            arguments (Input)
+                A {mustBeSE3}
+            end
+            arguments (Output)
+                Ainv {mustBeSE3}
+            end
+
+            A_1 = A(1:3, 1:3).';
+            Ainv = [A(1:3, 1:3).', -A_1*A(1:3, 4); 0, 0, 0, 1];
         end
 
         % --------------------------------------------------------------- %
