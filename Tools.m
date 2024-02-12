@@ -6,7 +6,12 @@ classdef Tools
     % Tools Methods:
     %   addCasADiToPath - Add CasADi folder to Matlab path
     %   checkCasADi - Check if CasADi folder is already in Matlab path
+    %   mustBeAxis - Validate that data is axis
+    %   mustBeNonzeroNorm - Validate that data has non zero norm
+    %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3)    
+    %   mustHaveSize - Validate that data has specific dimension
     %   mustOr - Validate if data is ... or ...
+    %   rotTra - Check or generate roto-translation from data
 
     properties (Constant = true, Access = private, Hidden = true)
         % tim - Timer used to avoid multiple error report
@@ -159,14 +164,16 @@ classdef Tools
                         
 
                         % Custom
-                        case 'mustBeSizeVector', multiInput = true; Tools.mustBeSizeVector(data, checks{k}{2})
+                        case 'mustBeAxis', Tools.mustBeAxis(data)
                         case 'mustBeNonzeroNorm', Tools.mustBeNonzeroNorm(data)
+                        case 'mustBeSE3', Tools.mustBeSE3(data)
+                        case 'mustHaveSize', multiInput = true; Tools.mustHaveSize(data, checks{k}{2})
                         % case '',
 
                         otherwise
                             % Check feasibility of 
                             try mustBeTextScalar(checks{k}{1})
-                                fprintf('%s: not inside the implemented checks', checks{k}{1});
+                                fprintf('%s: not inside the implemented checks\n', checks{k}{1});
                             catch, throw(MException('Tools:NotParamCheck', ...
                                 'Required variable check not feasible. Pass char array or string as identifier'));
                             end
@@ -193,11 +200,11 @@ classdef Tools
 
         % ------------------------- %
 
-        function mustBeSizeVector(data, dim)
-            % mustBeSizeVector - Validate that data has specific dimension
+        function mustHaveSize(data, dim, text)
+            % mustHaveSize - Validate that data has specific dimension
             %
             % Syntax
-            %   mustBeSizeVector(data, dim)
+            %   mustHaveSize(data, dim)
             %
             % Input:
             %   data - Data to validate
@@ -205,18 +212,14 @@ classdef Tools
             %   dim - Dimension to check with
             %       Integer(1, m)
 
-            arguments, data, dim {mustBeInteger, mustBeVector}, end
+            arguments, data, dim {mustBeInteger, mustBeVector}, text {mustBeTextScalar} = '', end
             
             if size(dim, 1) ~= 1, dim = dim.'; end
 
-            % Check array match
-            if numel(size(data)) ~= numel(dim)
-                throw(MException('Tools:WrongDim', ['Mismatch between ' ...
-                    'numel(size(data)) (= %s) and # of dim to check (= %s)'], num2str(numel(size(data))), num2str(numel(dim))))
-            end
-
-            if any(size(data) ~= dim)
-                throw(MException('Tools:WrongDim', ['''data'' does not match the required dimension.' ...
+            if isequal(size(data), dim), return
+            else
+                if isempty(text), text = '''data'''; else, text = ['', text, '']; end
+                throw(MException('Tools:WrongDim', [text, ' does not match the required dimension.' ...
                     '\nActual dimension = [%s], Desired = [%s]'], num2str(size(data)), num2str(dim)))
             end
         end
@@ -243,7 +246,7 @@ classdef Tools
 
         function mustBeSE3(data)
             % mustBeSE3 - Validate that data is an homogeneous matrix (SE(3))
-            %   Calls mustBeNumeric, mustBeNonNan, mustBeSizeVector(data, [4, 4])
+            %   Calls mustBeNumeric, mustBeNonNan, Tools.mustHaveSize(data, [4, 4])
             %
             % Syntax
             %   mustBeSE3(data)
@@ -254,12 +257,105 @@ classdef Tools
 
             threshold = 1e-5;
 
-            mustBeNumeric(data), mustBeNonNan(data), Tools.mustBeSizeVector(data, [4, 4])
+            mustBeNumeric(data), mustBeNonNan(data), Tools.mustHaveSize(data, [4, 4])
             R = data(1:3, 1:3);
             if any(abs(data(4, :) - [0, 0, 0, 1]) > threshold, 'all') || ...
                 any(abs(R*(R.') - eye(3)) > threshold, 'all') || any(abs((R.')*R - eye(3)) > threshold, 'all') || ...
                 (abs(det(R) - 1) > threshold)
                 throw(MException('Tools:WrongValue', 'Must belong to SE(3) group'))
+            end
+        end
+
+        % ------------------------- %
+
+        function mustBeAxis(data)
+            % mustBeAxis - Validate that data is axis
+            %   Calls Tools.isAxis
+            %
+            % Syntax
+            %   mustBeAxis(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %       double()
+
+            if any(isnan(Tools.isAxis(data)))
+                throw(MException('Tools:WrongValue', ['Data must be member of ' ...
+                    '{''x'', ''y'', ''z''} or numeric triplet double(3, 1)']))
+            end
+        end
+        
+        % ------------------------- %
+
+        function axis = isAxis(data)
+            % isAxis - Check if data is member of {'x', 'y', 'z'} group or
+            %   is a vector triplet and return the correspondednt normalized
+            %   vector
+            %   Calls {Tools.mustBeNonzeroNorm, mustBeNonNan, Tools.mustHaveSize(..., [3, 1])}
+            %       or {mustBeMember(..., {'x', 'y', 'z'})}
+            %       
+            % Syntax
+            %   axis = isAxis(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %       double(3, 1) or {char array or string}
+            % Output:
+            %   axis - Nomralized corresponding axis (nan if fail some checks)
+            %       double(3, 1)
+            arguments (Output)
+                axis {Tools.mustHaveSize(axis, [3, 1])}
+            end
+
+            try
+                Tools.mustBeNonzeroNorm(data), mustBeNonNan(data)
+                Tools.mustHaveSize(data, [3, 1])
+                axis = data/norm(data);
+                return
+            catch
+                try
+                    mustBeMember(data, {'x', 'y', 'z'})
+                    switch data
+                        case 'x', axis = [1, 0, 0].';
+                        case 'y', axis = [0, 1, 0].';
+                        case 'z', axis = [0, 0, 1].';
+                    end
+                    return
+                catch
+                end
+            end
+            axis = nan(3, 1);
+        end
+
+        % ------------------------- %
+
+        function A = rotTra(data)
+            % rotTra - Check or generate roto-translation from data
+            % 
+            % Syntax
+            %   rotTra(data)
+            %   
+            % Input:
+            %   data - Roto-transaltion data
+            %       in SE(3) or Danavit-Hartenberg parms | double(4, 4) or double(1, 4)
+            %       Denavit-Hartenberg params: [d, theta, a, alpha]
+            % Output:
+            %   A - HOmogeneous matrix representing the roto-translation
+            %       in SE(3) | double(4, 4)
+
+            arguments (Input)
+                data {mustBeNonempty, mustBeFinite, Tools.mustOr(data, {'mustBeSE3'}, {'mustHaveSize', [1, 4]})}
+            end
+            arguments (Output), A {Tools.mustBeSE3}, end
+            
+            if all(size(data) == [1, 4])
+                d = data(1); theta = data(2); a = data(3); alpha = data(4);
+
+                A = [cos(theta), -sin(theta)*cos(alpha), sin(theta)*sin(alpha),  a*cos(theta);
+                     sin(theta),  cos(theta)*cos(alpha), -cos(theta)*sin(alpha), a*sin(theta);
+                         0,              sin(alpha),              cos(alpha),          d;
+                         0,                  0,                      0,                1];
+            else, A = data;
             end
         end
     end
