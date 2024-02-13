@@ -16,6 +16,9 @@ classdef Joint < handle_light
     %   copyRigidBodyJoint - Copy rigidBodyJoint in a Joint object (Static)
     %   setFixedTR - Set fixed transformation between joint's frames
     %   toString - Plot in the command window object data
+    
+
+    % ---------------- Properties ---------------------- %
 
     properties
         % name - Joint name
@@ -28,11 +31,11 @@ classdef Joint < handle_light
 
         % positionLimits - Minimum and maximum values reachable by the joint
         %   rad or m | default = [0, 0] | double(2, 1)
-        positionLimits {mustBeNonNan, mustBeNumeric, Tools.mustHaveSize(positionLimits, [2, 1])} = [0, 0].'
+        positionLimits {mustBeNonNan, mustBeReal, Tools.mustHaveSize(positionLimits, [2, 1])} = [0, 0].'
 
         % homePosition - Home position of the joint
         %   rad or m | default = 0 | double(1, 1)
-        homePosition {mustBeNonNan, mustBeNumeric, Tools.mustHaveSize(homePosition, [1, 1])} = 0
+        homePosition {mustBeNonNan, mustBeReal, Tools.mustHaveSize(homePosition, [1, 1])} = 0
 
         % jointAxis - Axis of rotation or translation of the joint
         %   [automatic conversion from {'x', 'y', 'z'} to double(3, 1)]
@@ -52,7 +55,26 @@ classdef Joint < handle_light
         c2j {Tools.mustBeSE3} = eye(4)
     end
 
-    % -------------------------------------------------- %
+    % ------------------------- %
+    
+    properties (Dependent)
+        % A - Homogeneous matrix representing the (moved)
+        %   Set: set the frame of the previous joint
+        %   Get: get the joint (moved) frame
+        %       defualt = eye(4) | double(4, 4) or MX.sym(4, 4)
+        A {Tools.mustHaveSize(A, [4, 4]), Tools.mustOr(A, {'mustBeA', 'casadi.MX'}, {'mustBeReal'})}
+    end
+
+    % ------------------------- %
+
+    properties (SetAccess = {?Joint, ?Link}, GetAccess = {?Joint, ?Link}, Hidden)
+        % Ab - Hidden variable containing the frame of the previous joint
+        %       defualt = eye(4) | double(4, 4) or MX.sym(4, 4)
+        Ab {Tools.mustHaveSize(Ab, [4, 4]), Tools.mustOr(Ab, {'mustBeA', 'casadi.MX'}, {'mustBeReal'})} = eye(4)
+    end
+
+
+    % ----------------- Functions ---------------------- %
 
     methods
         % ----- Constructor ----- %
@@ -76,8 +98,8 @@ classdef Joint < handle_light
             arguments (Input)
                 name {mustBeNonempty, Tools.mustOr(name, {'mustBeTextScalar'}, {'mustBeA', 'rigidBodyJoint'})}
                 type {mustBeMember(type, {'revolute', 'prismatic', 'fixed'})} = 'fixed'
-                positionLimits {mustBeNonNan, mustBeNumeric, Tools.mustHaveSize(positionLimits, [2, 1])} = [0, 0].'
-                homePosition {mustBeNonNan, mustBeNumeric, Tools.mustHaveSize(homePosition, [1, 1])} = 0
+                positionLimits {mustBeNonNan, mustBeReal, Tools.mustHaveSize(positionLimits, [2, 1])} = [0, 0].'
+                homePosition {mustBeNonNan, mustBeReal, Tools.mustHaveSize(homePosition, [1, 1])} = 0
                 jointAxis {Tools.mustBeAxis} = [0, 0, 1].'
             end
             arguments (Output), obj Joint, end
@@ -127,18 +149,6 @@ classdef Joint < handle_light
                 case 'j2p', obj.j2p = Tools.rotTra(data);
                 otherwise, obj.c2j = Tools.rotTra(data);
             end
-
-        end
-
-        % ------------------------- %
-
-        function set.jointAxis(obj, axis)            
-            % Input:
-            %   axis - Axis of rotation/transaltion
-            %       in {'x', 'y', 'z'} or double(3, 1)
-            
-            arguments, obj Joint, axis {Tools.mustBeAxis}, end
-            obj.jointAxis = Tools.isAxis(axis);
         end
 
         % ------------------------- %
@@ -170,9 +180,77 @@ classdef Joint < handle_light
                 num2str(rotm2eul(obj.j2p(1:3, 1:3), "XYZ")*180/pi), num2str(obj.j2p(1:3, 4).'), ...
                 num2str(rotm2eul(obj.c2j(1:3, 1:3), "XYZ")*180/pi), num2str(obj.c2j(1:3, 4).'))
         end
+
+        % ------------------------- %
+
+        function plot(obj, jointValue, specifics)
+            % plot - Plot Joint object
+            % Frame legend:
+            %   
+            
+            arguments
+                obj Joint,
+                jointValue {mustBeReal, Tools.mustHaveSize(jointValue, [1, 1])} = obj.homePosition
+            end
+            arguments (Repeating), specifics {mustBeMember(specifics, {'fixed', 'moved', 'child'})}, end
+
+            if isa(obj.Ab, 'casadi.MX'), warning(['Cannot plot the joint since ' ...
+                    'there is a further dependency on the joint base frame.\n' ...
+                    'Resort to plot of Arm class'], []), return
+            end
+
+            if isempty(specifics), specifics = {'moved'}; end
+            A_fun = obj.A; A_val = full(A_fun(jointValue));
+
+            for k = 1:numel(specifics)
+                switch specifics{k}
+                    case 'fixed', Tools.plotFrames(obj.Ab, '_f', ':');
+                    case 'moved', Tools.plotFrames(A_val, '_m', '-');
+                    case 'child', Tools.plotFrames(A_val*obj.c2j, '_c', '--');
+                end
+            end
+        end
     end
 
-    % -------------------------------------------------- %
+
+    % ---------------- Get set fun. -------------------- %
+
+    methods
+        function set.jointAxis(obj, axis)            
+            % Input:
+            %   axis - Axis of rotation/transaltion
+            %       in {'x', 'y', 'z'} or double(3, 1)
+            
+            arguments, obj Joint, axis {Tools.mustBeAxis}, end
+            obj.jointAxis = Tools.isAxis(axis);
+        end
+
+        % ------------------------- %
+
+        function set.A(obj, Ab)
+            % Save homogeneous matrix of the joint base frame
+            obj.Ab = Ab;
+        end
+        
+        % ------------------------- %
+
+        function A = get.A(obj)
+            % Return (moved) joint symbolic expression
+            import casadi.*
+            x = MX.sym('x', [1, 1]);
+            switch obj.type
+                case 'revolute'
+                    K = Tools.skew(obj.jointAxis); R = MX.eye(3) + sin(x)*K + (1 - cos(x))*K^2;
+                    Aj = [R, zeros(3, 1); 0, 0, 0, 1];
+                case 'prismatic', Aj = [MX.eye(3), x*obj.jointAxis; 0, 0, 0, 1];
+                otherwise, Aj = MX.eye(4);
+            end
+            A = Function('A', {x}, {obj.Ab*obj.j2p*Aj});
+        end
+    end
+
+
+    % ------------------- Static ----------------------- %
 
     methods (Static)
         function jointObj = copyRigidBodyJoint(rigidBodyJointObj)

@@ -6,12 +6,15 @@ classdef Tools
     % Tools Methods:
     %   addCasADiToPath - Add CasADi folder to Matlab path
     %   checkCasADi - Check if CasADi folder is already in Matlab path
+    %   inertiaConv - Inertia matrix-vector conversion
+    %   isAxis - Check if data is member of {'x', 'y', 'z'} group or
     %   mustBeAxis - Validate that data is axis
     %   mustBeNonzeroNorm - Validate that data has non zero norm
     %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3)    
     %   mustHaveSize - Validate that data has specific dimension
     %   mustOr - Validate if data is ... or ...
     %   rotTra - Check or generate roto-translation from data
+    %   skew - Convert a 3d vector in its skew symmetric matrix representation
 
     properties (Constant = true, Access = private, Hidden = true)
         % tim - Timer used to avoid multiple error report
@@ -92,6 +95,61 @@ classdef Tools
                 Tools.tim.start
                 warning('Required CasADi toolbox. See Tools.addCasADiToPath to help adding CasADi folder.')
             end
+        end
+
+        % ------------------------- %
+
+        function I_conv = inertiaConv(I)
+            % inertiaConv - Inertia matrix-vector conversion. Check also if
+            % data represents an admissible inertia matrix
+            %   (Inertia vector [Ixx, Iyy, Izz, Iyz, Ixz, Ixy])
+            %
+            % Syntax
+            %   I_conv = inertiaConv(I)
+            %
+            % Input:
+            %   I - Inertia matrix (vector)
+            %       double(3, 3) (double(6, 1))
+            % Output:
+            %   I_conv - Inertia vector (matrix)
+            %       double(6, 1) (double(3, 3))
+            
+            arguments, I {mustBeReal, Tools.mustOr(I, {'mustHaveSize', [6, 1]}, ...
+                    {'mustHaveSize', [3, 3]})}, end
+
+            if isequal(size(I), [3, 3])
+                if det(I) < 0, throw(MException('Tools:WrongData', ...
+                        'Inertia matrices shold be positive semi-definite. Check data'))
+                end
+                I_conv = [diag(I), I(2, 3), I(1, 3), I(1, 2)];
+            else
+                I_conv = diag(I(1:3)) + squareform(flip(I(4:end)));
+                if det(I_conv) < 0, throw(MException('Tools:WrongData', ...
+                        'Inertia matrices must be positive semi-definite. Check data'))
+                end
+            end
+        end
+
+        % ------------------------- %
+
+        function A = skew(w)
+            % skew - Convert a 3d vector in its skew symmetric matrix representation
+            %
+            % Syntax
+            %   A = skew(w)
+            %
+            % Input:
+            %   w - Vector
+            %       ...(3, 1) or ...(1, 3)
+            % Output:
+            %   A - Skew symmetric matrix
+            %       ...(3, 3)
+
+            arguments, w {mustBeVector}, end
+            if size(w, 1) ~= 1, w = w.'; end
+            Tools.mustHaveSize(w, [1, 3])
+
+            A = [[0 -w(3), w(2)]; [w(3), 0, -w(1)]; [-w(2), w(1), 0]];
         end
 
         % ------------------------- %
@@ -228,7 +286,7 @@ classdef Tools
 
         function mustBeNonzeroNorm(data)
             % mustBeNonzeroNorm - Validate that data has non zero norm
-            %   Calls mustBeVector, mustBeNumeric
+            %   Calls mustBeVector, mustBeReal
             %
             % Syntax
             %   mustBeNonzeroNorm(data)
@@ -237,7 +295,7 @@ classdef Tools
             %   data - Data to validate
             %       double()
 
-            mustBeVector(data), mustBeNumeric(data)
+            mustBeVector(data), mustBeReal(data)
             if norm(data), return, end
             throw(MException('Tools:ZeroNorm', 'Data must have non-zero norm'))
         end
@@ -246,7 +304,7 @@ classdef Tools
 
         function mustBeSE3(data)
             % mustBeSE3 - Validate that data is an homogeneous matrix (SE(3))
-            %   Calls mustBeNumeric, mustBeNonNan, Tools.mustHaveSize(data, [4, 4])
+            %   Calls mustBeReal, mustBeNonNan, Tools.mustHaveSize(data, [4, 4])
             %
             % Syntax
             %   mustBeSE3(data)
@@ -257,7 +315,7 @@ classdef Tools
 
             threshold = 1e-5;
 
-            mustBeNumeric(data), mustBeNonNan(data), Tools.mustHaveSize(data, [4, 4])
+            mustBeReal(data), mustBeNonNan(data), Tools.mustHaveSize(data, [4, 4])
             R = data(1:3, 1:3);
             if any(abs(data(4, :) - [0, 0, 0, 1]) > threshold, 'all') || ...
                 any(abs(R*(R.') - eye(3)) > threshold, 'all') || any(abs((R.')*R - eye(3)) > threshold, 'all') || ...

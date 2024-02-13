@@ -26,17 +26,17 @@ classdef Link < handle_light
         % See also Joint
         joint {mustBeA(joint, 'Joint'), mustBeNonempty} = Joint('jnt')
 
-        % mass - Link mass ([j2p_mass; c2j_mass])
-        %   kg (2x1) | default = zeros(2, 1) | duble(2, 1)
-        mass {mustBeNumeric, Tools.mustHaveSize(mass, [2, 1], 'mass')} = zeros(2, 1)
+        % mass - Link mass ([j2p_mass, c2j_mass])
+        %   kg (1x2) | default = zeros(2, 1) | duble(2, 1)
+        mass {mustBeReal, Tools.mustHaveSize(mass, [1, 2], 'mass')} = zeros(1, 2)
 
-        % CoM - Center of Mass position, expressed w.r.t. fixed joint frame ([j2p_CoM; c2j_CoM])
-        %   m (2x3) | default = zeros(2, 3) | double(2, 3)
-        CoM {mustBeNumeric, Tools.mustHaveSize(CoM, [2, 3], 'CoM')} = zeros(2, 3)
+        % CoM - Center of Mass position, expressed w.r.t. fixed joint frame ([j2p_CoM, c2j_CoM])
+        %   m (3x2) | default = zeros(2, 3) | double(2, 3)
+        CoM {mustBeReal, Tools.mustHaveSize(CoM, [3, 2], 'CoM')} = zeros(3, 2)
 
-        % I - Inertia matrix expressed w.r.t. link's CoM ([Ixx, Iyy, Izz, Iyz, Ixz, Ixy])
-        %   kg m^2 (2x6) | defualt = zeros(2, 6) | double(2, 6)
-        I {mustBeNumeric, Tools.mustHaveSize(I, [2, 6], 'Inertia')} = zeros(2, 6)
+        % I - Inertia matrix expressed w.r.t. link's CoM ([Ixx, Iyy, Izz, Iyz, Ixz, Ixy].')
+        %   kg m^2 (6x2) | defualt = zeros(6, 2) | double(6, 2)
+        I {mustBeReal, Tools.mustHaveSize(I, [6, 2], 'Inertia')} = zeros(6, 2)
     end
 
     % ------------------------- %
@@ -88,15 +88,29 @@ classdef Link < handle_light
                      '   |  j2p: %s kg\n', ...
                      '   |  c2j: %s kg\n', ...
                      '  CoM:\n' ...
-                     '   |  j2p: [%s] m\n', ...
-                     '   |  c2j: [%s] m\n', ...
+                     '   |  j2p: [%s]^T m\n', ...
+                     '   |  c2j: [%s]^T m\n', ...
                      '  Inertia [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]:\n' ...
-                     '   |  j2p: [%s] kg m^2\n', ...
-                     '   |  c2j: [%s] kg m^2\n', ...
+                     '   |  j2p: [%s]^T kg m^2\n', ...
+                     '   |  c2j: [%s]^T kg m^2\n', ...
                      ' ------------------------- \n\n'], ...
-                     num2str(obj.mass(1, :)), num2str(obj.mass(2, :)), ...
-                     num2str(obj.CoM(1, :)), num2str(obj.CoM(2, :)), ...
-                     num2str(obj.I(1, :)), num2str(obj.I(2, :)))
+                     num2str(obj.mass(:, 1)), num2str(obj.mass(:, 2)), ...
+                     num2str(obj.CoM(:, 1).'), num2str(obj.CoM(:, 2).'), ...
+                     num2str(obj.I(:, 1).'), num2str(obj.I(:, 2).'))
+        end
+
+        % ------------------------- %
+
+        function set.I(obj, inertia)
+            % Check that data represents an inertia matrix during inesertion
+            % Input:
+            %   inertia - Inertia matrix [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]
+            %       double(6, 2)
+
+            arguments, obj Link, inertia {mustBeReal}, end
+
+            for k = 1:size(inertia, 2), Tools.inertiaConv(inertia(:, k)); end
+            obj.I = inertia;
         end
     end
 
@@ -120,20 +134,23 @@ classdef Link < handle_light
             %       Link
 
             arguments (Input)
-                rigidBodyObj rigidBody {mustBeA(rigidBodyObj, 'rigidBody')}
+                rigidBodyObj {mustBeA(rigidBodyObj, 'rigidBody')}
                 frame {mustBeMember(frame, {'c2j', 'j2p'})} = 'c2j'
             end
             arguments (Output), linkObj Link, end
-
-            linkObj = Link(rigidBodyObj.Name, rigidBodyObj.Joint);
+            
+            if isa(rigidBodyObj.Joint, 'Joint'), joint = rigidBodyObj.Joint;
+            else, joint = Joint.copyRigidBodyJoint(rigidBodyObj.Joint);
+            end
+            linkObj = Link(rigidBodyObj.Name, joint);
             switch frame
                 case 'c2j', index = 2;
                 otherwise, index = 1;
             end
 
-            linkObj.mass(index, :) = rigidBodyObj.Mass;
-            linkObj.CoM(index, :) = rigidBodyObj.CoM;
-            linkObj.I(index, :) = rigidBodyObj.I;
+            linkObj.mass(:, index) = rigidBodyObj.Mass;
+            linkObj.CoM(:, index) = rigidBodyObj.CenterOfMass;
+            linkObj.I(:, index) = rigidBodyObj.Inertia;
 
             % ------------------------------------------------------------- TO DO: Add visual
         end

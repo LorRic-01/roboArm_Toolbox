@@ -1,6 +1,5 @@
 % JOINTTEST Test Joint class
 clc, clearvars, close all
-printL = @() fprintf('\n ------------------------------ \n');
 
 %% Constructor
 joint = Joint('joint1'); joint.toString
