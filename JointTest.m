@@ -19,3 +19,9 @@ joint.jointAxis = 'y'; joint.toString
 DHParams = [1, pi/4, 1, 0];
 joint = Joint('joint7');
 joint.setFixedTR(DHParams); joint.toString
+
+%% Plot
+joint = Joint('joint7', 'revolute', [-pi, pi].', pi/4, [1, 0, 0].');
+DHParams = [0, 0, 1, pi/3]; joint.setFixedTR(DHParams, 'j2p');
+DHParams = [1, pi/6, 0, 0]; joint.setFixedTR(DHParams, 'c2j');
+figure(1), clf, grid on, axis equal, joint.plot([], 'all'), view(3)

@@ -1,114 +1,136 @@
-in2m = 1/39.3701;
+Pi = rand(100, 3);
+K = convhull(Pi(:, 1), Pi(:, 2), Pi(:, 3));
 
-model = createpde;
-model.Geometry = importGeometry('Pri1_merge_fixed.stl');
-scale(model.Geometry, in2m)
+Pi = [[0, 0, 0].', [3, 0, 0].', [3, 0, 2].', [2, 0, 2].', [2, 0, 1].',...
+    [1, 0, 1].', [1, 0, 2].', [0, 0, 2].', ...
+    [0, 1, 0].', [3, 1, 0].', [3, 1, 2].', [2, 1, 2].', [2, 1, 1].',...
+    [1, 1, 1].', [1, 1, 2].', [0, 1, 2].'].';
+K = [1, 8, 7;
+    1, 7, 6;
+    1, 6, 5;
+    1, 5, 2;
+    2, 4, 5;
+    2, 3, 4;
+    9, 16, 15;
+    9, 15, 14;
+    9, 14, 13;
+    9, 13, 10;
+    10, 12, 13;
+    10, 11, 12;
+    1, 8, 9;
+    9, 8, 16;
+    2, 10, 3;
+    3, 10, 11;
+    11, 4, 3;
+    11, 4, 12;
+    5, 13, 4;
+    4, 13, 12;
+    5, 6, 13;
+    6, 13, 14;
+    6, 14, 7;
+    7, 14, 15;
+    7, 8, 15;
+    8, 15, 16;
+    1, 2, 10;
+    1, 10, 9];
+tri = triangulation(K,Pi);
 
-figure(1), clf, pdegplot(model), hold on
+P = 1.5*rand(3, 1);
 
-figure(2), clf, nexttile, plot3(model.Geometry.Vertices(:, 1), ...
-    model.Geometry.Vertices(:, 2), model.Geometry.Vertices(:, 3), '.', 'MarkerSize', 10)
-axis equal, hold on
+dir = rand(3, 1);
+A1 = zeros(numel(tri.ConnectivityList) + size(tri.ConnectivityList, 1), numel(tri.ConnectivityList) + size(tri.ConnectivityList, 1));
+for k = 1:size(tri.ConnectivityList, 1)
+    A1(((k-1)*4 + 1):(4*k), ((k-1)*4 + 1):(4*k)) = [[tri.Points(tri.ConnectivityList(k, :), :).'; 1, 1, 1], [-dir; 0]];
+end
+P_f = repmat([P; 1], [size(tri.ConnectivityList, 1), 1]);
+%%
+clc
 
-convexHull = convhull(model.Geometry.Vertices(:, 1), model.Geometry.Vertices(:, 2), model.Geometry.Vertices(:, 3));
-TR = triangulation(convexHull, model.Geometry.Vertices);
-% trimesh(TR)
-
-used = unique(convexHull(:));
-DTR = delaunayTriangulation(model.Geometry.Vertices(used, 1),model.Geometry.Vertices(used, 2), model.Geometry.Vertices(used, 3));
-nexttile, tetramesh(DTR)
-
-% DTR2 = delaunayTriangulation(model.Geometry.Vertices(:, 1),model.Geometry.Vertices(:, 2), model.Geometry.Vertices(:, 3));
-% tetramesh(DTR2)
-
-% [index, c, score] = kmeans(model.Geometry.Vertices, floor(size(model.Geometry.Vertices, 1)/100));
-% plot3(c(:, 1), c(:, 2), c(:, 3), '.', 'MarkerSize', 10)
-
-% %% New pde
-% model2 = createpde;
-% model2.Geometry = geometryFromMesh(model2, )
-
-% generateMesh(model,"Hmin", 0.25, 'GeometricOrder','linear')
-% figure, plot3(model.Mesh.Nodes(1, :), model.Mesh.Nodes(2, :), model.Mesh.Nodes(3, :), '.', 'MarkerSize', 10)
+sol = A1\P_f;
+count = sum(all(reshape(sol > 0, 4, []), 1));
 
 %%
+% vecs = zeros(size(tri.ConnectivityList, 1), 4);
+% done = false;
+% while ~done
+%     count = 0;
+% 
+%     for k = 1:size(tri.ConnectivityList, 1)
+%         A = [[tri.Points(tri.ConnectivityList(k, :), :).'; 1, 1, 1], [-dir; 0]];
+%         lastwarn(''), vec = A\[P; 1];
+% 
+%         [warnMsg, warnId] = lastwarn;
+%         if ~isempty(warnMsg)
+%             done = false; fprinf('Fail \n')
+%             break
+%         end
+% 
+%         points = [tri.Points(tri.ConnectivityList(k, :), :).', tri.Points(tri.ConnectivityList(k, 1), :).'];
+%         figure(2), clf, plot3(points(1, :), points(2, :), points(3, :), '.-', 'MarkerSize', 15)
+%         grid on, axis equal, hold on
+%         plot3(P(1), P(2), P(3), '.', 'MarkerSize', 15), quiver3(P(1), P(2), P(3), dir(1), dir(2), dir(3)), view(2)
+%         xlabel('x'), ylabel('y'), zlabel('z')
+%         vecs(k, :) = vec.';
+%         if (vec(4) > 0) && all(vec(1:3) > 0)
+%             count = count + 1;
+%         end
+%     end
+%     done = true;
+% end
+% 
+% count
+% figure(1), clf
+% trimesh(tri, 'EdgeColor', 'b')
+% grid on, axis equal, hold on, plot3(P(1), P(2), P(3), '.', 'MarkerSize', 15)
+% quiver3(P(1), P(2), P(3), dir(1), dir(2), dir(3))
+% xlabel('x'), ylabel('y'), zlabel('z')
 
-points = model.Geometry.Vertices;
-uniquePoints = [];
+%% Particle distribution
 
-for n = 1:5
-    convexHull = convhull(points(:, 1), points(:, 2), points(:, 3));
-    uniquePoints = [uniquePoints; points(unique(convexHull(:)), :)];
-    
-    nearPoint = false(size(points, 1), 1);
-    
-    for convexHull = 1:size(uniquePoints, 1)
-        d = sum((points - uniquePoints(convexHull, :)).^2, 2);
-        nearPoint(d < 0.05) = true;
-    end
-    
-    points = points(~nearPoint, :);
-    if isempty(points), break, end
-end
+n_part = 1000;
+particle = 0.1*rand(n_part, 3) + 0.5;
+cost = @(x, swarm) min(sum((swarm - x).^2, 2));
 
 figure(3), clf
-plot3(model.Geometry.Vertices(:, 1), model.Geometry.Vertices(:, 2), model.Geometry.Vertices(:, 3), '.', 'MarkerSize', 5), hold on
-plot3(uniquePoints(:, 1), uniquePoints(:, 2), uniquePoints(:, 3), '.g', 'MarkerSize', 10)
-% plot3(farPoints(:, 1), farPoints(:, 2), farPoints(:, 3), '.r', 'MarkerSize', 10)
-axis equal
+trimesh(tri, 'EdgeColor', 'b', 'FaceAlpha', 0.1)
+grid on, axis equal, hold on, plot3(particle(:, 1), particle(:, 2), particle(:, 3), '.', 'MarkerSize', 15)
+xlabel('x'), ylabel('y'), zlabel('z'), drawnow
 
+cost_p = zeros(n_part, 1);
+for k = 1:n_part
+    cost_p(k) = cost(particle(k, :), particle);
+end
 
-%
-DTR3 = delaunayTriangulation(uniquePoints(:, 1), uniquePoints(:, 2), uniquePoints(:, 3));
-figure(4), clf, tetramesh(DTR3)
+dA = decomposition(A1, 'auto');
 
-
-%% Final results
-
-in2m = 1/39.3701;
-
-model = createpde;
-model.Geometry = importGeometry('Pri1_merge_fixed.stl');
-scale(model.Geometry, in2m);
-
-figure(1), clf, h = pdegplot(model); hold on
-
-for k = 1:length(h)
-    if isa(h(k), 'matlab.graphics.primitive.Patch')
-        reducepatch(h(k), 0.1)
-        TR = triangulation(h(k).Faces, h(k).Vertices(:, 1), h(k).Vertices(:, 2), h(k).Vertices(:, 3));
-        trimesh(TR)
-        break;
+tic
+cycle = 100;
+for iter = 1:cycle
+    fprintf('Iter: %i\n', iter)
+    for n = 1:n_part
+        % Mix
+        j = n;
+        while j == n
+            j = randi(n_part, [1, 1]);
+            k = randi(3, [1, 1]);
+        end
+        newP = particle(n, :);
+        newP(:, k) = particle(n, k) + (2*rand - 1)*(particle(n, k) - particle(j, k));
+        cost_new = cost(newP, particle);
+        
+        % Check cost improvement
+        P_f = repmat([newP.'; 1], [size(tri.ConnectivityList, 1), 1]);
+        count = sum(all(reshape((dA\P_f) > 0, 4, []), 1));
+        if (cost_new > cost_p(n)) && (mod(count, 2) ~= 0)
+            particle(n, :) = newP;
+            cost_p(n) = cost_new;
+        end
     end
 end
+toc
 
-model2 = createpde;
-geometryFromMesh(model2, TR.Points.', TR.ConnectivityList.');
+figure(3), clf
+trimesh(tri, 'EdgeColor', 'b', 'FaceAlpha', 0.1)
+grid on, axis equal, hold on, plot3(particle(:, 1), particle(:, 2), particle(:, 3), '.', 'MarkerSize', 15)
+xlabel('x'), ylabel('y'), zlabel('z')
 
-
-%%
-
-cube = multicuboid(1, 1, 1);
-% DTR = delaunayTriangulation(cube.Vertices);
-figure(1), clf, h = pdegplot(cube); hold on
-TR = triangulation(h(1).Faces, h(1).Vertices(:, 1), h(1).Vertices(:, 2), h(1).Vertices(:, 3));
-
-trimesh(TR)
-
-inner3D([0, 0, 0], TR.Points, TR.ConnectivityList)
-
-
-function check = inner3D(point, points, connectivity)
-    % compute if a point is inside the 3d object
-    check = false;
-
-    for k = 1:size(connectivity, 1)
-        (abs(det([points(connectivity(1, :), :).', point.'; 1, 1, 1, 0])) > 1e-5)
-    end
-
-end
-
-function Ainv = inv4(A)
-    % invert 4x4 matix
-    Ainv = []
-end

@@ -9,10 +9,12 @@ classdef Tools
     %   inertiaConv - Inertia matrix-vector conversion
     %   isAxis - Check if data is member of {'x', 'y', 'z'} group or
     %   mustBeAxis - Validate that data is axis
+    %   mustBeEmpty - Validate that data is empty
     %   mustBeNonzeroNorm - Validate that data has non zero norm
     %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3)    
     %   mustHaveSize - Validate that data has specific dimension
     %   mustOr - Validate if data is ... or ...
+    %   plotFrames - Plot frame, passed as homogeneous matrix
     %   rotTra - Check or generate roto-translation from data
     %   skew - Convert a 3d vector in its skew symmetric matrix representation
 
@@ -154,6 +156,46 @@ classdef Tools
 
         % ------------------------- %
 
+        function plotFrames(A, text, specifics)
+            % plotFrames - Plot frame, passed as homogeneous matrix
+            %
+            % Syntax
+            %   plotFrames(A)
+            %   plotFrames(A, text)
+            %   plotFrames(A, text, specific1, specific2, ...)
+            %
+            % Input:
+            %   A - Homogeneous matrix frame
+            %       belong to SE(3) | double(4, 4)
+            %   text - Frame's name
+            %       default = '' | char array or string
+            %   specifics - Quiver style
+            %       default = '-' | char array
+            %       See also matlab.graphics.chart.primitive.Quiver
+            
+            arguments, A {Tools.mustBeSE3}, text {mustBeTextScalar} = '', end
+            arguments (Repeating), specifics, end
+
+            if isempty(specifics), specifics = {'-'}; end
+
+            % Frame axis length
+            L = 0.5;
+
+            R = L*A(1:3, 1:3); T = A(1:3, 4);
+            colorAxis = 'rgb'; hold on
+            for k = 1:3
+                q = quiver3(T(1), T(2), T(3), R(1, k), R(2, k), R(3, k), ...
+                    specifics{:}, 'Color', colorAxis(k), 'LineWidth', 2);
+                q.DataTipTemplate.DataTipRows = [dataTipTextRow('Frame: ', {text}), ...
+                        dataTipTextRow('Pos [m]: ', {T.'}), dataTipTextRow('RPY [deg]: ', {rotm2eul(R, 'XYZ')*180/pi})];
+                if k == 1, q.Marker = '.'; q.MarkerSize = 15; q.MarkerEdgeColor = 'k'; end
+            end
+            xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]'), axis equal, hold off
+        end
+
+
+        % ------------------------- %
+
         function mustOr(data, checks)
             % mustOr - Validate if data is ... or ...
             %
@@ -226,6 +268,7 @@ classdef Tools
                         case 'mustBeNonzeroNorm', Tools.mustBeNonzeroNorm(data)
                         case 'mustBeSE3', Tools.mustBeSE3(data)
                         case 'mustHaveSize', multiInput = true; Tools.mustHaveSize(data, checks{k}{2})
+                        case 'mustBeEmpty', Tools.mustBeEmpty(data)
                         % case '',
 
                         otherwise
@@ -254,6 +297,25 @@ classdef Tools
 
             throw(MException('Tools:MustOr', ['Validation not passed.' ...
                 '\nValidation to pass %s'], errorReport(1:end-2)));            
+        end
+
+        % ------------------------- %
+
+        function mustBeEmpty(data)
+            % mustBeEmpty - Validate that data is empty
+            %
+            % Syntax
+            %   mustBeEmpty(data)
+            %
+            % Input:
+            %   data - Data to validate
+
+            try
+                mustBeNonempty(data)
+                throw(MException('Tools:WrongData', 'Data must be empty'))
+            catch, return
+            end
+
         end
 
         % ------------------------- %

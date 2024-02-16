@@ -10,12 +10,14 @@ classdef Joint < handle_light
     %   jointAxis - Axis of rotation or translation of the joint
     %   j2p - Roto-translation of the current joint axis w.r.t. parent (previous joint axis)
     %   c2j - Roto-translation of the next joint(s) w.r.t. current joint
+    %   A - Homogeneous matrix representing the (moved) joint (casadi function)
     %
     % Joint Methods:
-    %   Joint - Class constructor
-    %   copyRigidBodyJoint - Copy rigidBodyJoint in a Joint object (Static)
+    %   Joint - Class constructor    
     %   setFixedTR - Set fixed transformation between joint's frames
     %   toString - Plot in the command window object data
+    %   plot - Plot Joint object
+    %   copyRigidBodyJoint - Copy rigidBodyJoint in a Joint object (Static)
     
 
     % ---------------- Properties ---------------------- %
@@ -58,7 +60,7 @@ classdef Joint < handle_light
     % ------------------------- %
     
     properties (Dependent)
-        % A - Homogeneous matrix representing the (moved)
+        % A - Homogeneous matrix representing the (moved) joint
         %   Set: set the frame of the previous joint
         %   Get: get the joint (moved) frame
         %       defualt = eye(4) | double(4, 4) or MX.sym(4, 4)
@@ -177,8 +179,8 @@ classdef Joint < handle_light
                      prefix, ' ------------------------- \n\n'], ...
                 obj.name, obj.type, num2str(obj.positionLimits.'), ...
                 num2str(obj.homePosition), num2str(obj.jointAxis.'), ...
-                num2str(rotm2eul(obj.j2p(1:3, 1:3), "XYZ")*180/pi), num2str(obj.j2p(1:3, 4).'), ...
-                num2str(rotm2eul(obj.c2j(1:3, 1:3), "XYZ")*180/pi), num2str(obj.c2j(1:3, 4).'))
+                num2str(rotm2eul(obj.j2p(1:3, 1:3), 'XYZ')*180/pi), num2str(obj.j2p(1:3, 4).'), ...
+                num2str(rotm2eul(obj.c2j(1:3, 1:3), 'XYZ')*180/pi), num2str(obj.c2j(1:3, 4).'))
         end
 
         % ------------------------- %
@@ -186,34 +188,50 @@ classdef Joint < handle_light
         function plot(obj, jointValue, specifics)
             % plot - Plot Joint object
             % Frame legend:
-            %   
+            %   - dotted line: parent joint frame ('parent')
+            %   - full line: (moved) joint frame ('joint')
+            %   - dashed line: child(ren) frame ('child')
+            %
+            % Syntax
+            %   plot(jointValue)
+            %   plot(jointValue, specific_1, specific_2, ...)
+            %
+            % Input:
+            %   jointValue - Joint value
+            %       rad or m | default = homePosition | empty or double(1, 1)
+            %   specifics - Frame(s) to show
+            %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
             
             arguments
                 obj Joint,
-                jointValue {mustBeReal, Tools.mustHaveSize(jointValue, [1, 1])} = obj.homePosition
+                jointValue {mustBeReal, Tools.mustOr(jointValue, {'mustHaveSize', [1, 1]}, {'mustBeEmpty'})} = obj.homePosition
             end
-            arguments (Repeating), specifics {mustBeMember(specifics, {'fixed', 'moved', 'child'})}, end
+            arguments (Repeating), specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})}, end
+
+            if isempty(jointValue), jointValue = obj.homePosition; end
 
             if isa(obj.Ab, 'casadi.MX'), warning(['Cannot plot the joint since ' ...
                     'there is a further dependency on the joint base frame.\n' ...
                     'Resort to plot of Arm class'], []), return
             end
 
-            if isempty(specifics), specifics = {'moved'}; end
+            if isempty(specifics), specifics = {'joint'}; end
             A_fun = obj.A; A_val = full(A_fun(jointValue));
 
+            if any(ismember(specifics, 'all')), specifics = {'parent', 'joint', 'child'}; end
+            specifics = unique(specifics);
             for k = 1:numel(specifics)
                 switch specifics{k}
-                    case 'fixed', Tools.plotFrames(obj.Ab, '_f', ':');
-                    case 'moved', Tools.plotFrames(A_val, '_m', '-');
-                    case 'child', Tools.plotFrames(A_val*obj.c2j, '_c', '--');
+                    case 'parent', Tools.plotFrames(obj.Ab, [obj.name, '_p'], ':');
+                    case 'joint', Tools.plotFrames(A_val, [obj.name, '_m'], '-');
+                    case 'child', Tools.plotFrames(A_val*obj.c2j, [obj.name, '_c'], '--');
                 end
             end
         end
     end
 
 
-    % ---------------- Get set fun. -------------------- %
+    % ---------------- Get/set fun. -------------------- %
 
     methods
         function set.jointAxis(obj, axis)            
