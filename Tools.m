@@ -6,12 +6,14 @@ classdef Tools
     % Tools Methods:
     %   addCasADiToPath - Add CasADi folder to Matlab path
     %   checkCasADi - Check if CasADi folder is already in Matlab path
+    %   cmpDynParams - Compute dyn. params (I and CoM) from triangulation
     %   inertiaConv - Inertia matrix-vector conversion
     %   isAxis - Check if data is member of {'x', 'y', 'z'} group or
     %   mustBeAxis - Validate that data is axis
     %   mustBeEmpty - Validate that data is empty
     %   mustBeNonzeroNorm - Validate that data has non zero norm
     %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3)    
+    %   mustHaveField - Validate that data has the desired filed
     %   mustHaveSize - Validate that data has specific dimension
     %   mustOr - Validate if data is ... or ...
     %   plotFrames - Plot frame, passed as homogeneous matrix
@@ -98,6 +100,145 @@ classdef Tools
                 warning('Required CasADi toolbox. See Tools.addCasADiToPath to help adding CasADi folder.')
             end
         end
+
+        % ------------------------- %
+
+        function [CoM, I, swarm, tri] = cmpDynParams(tri, swarm, params)
+            % cmpDynParams - Compute dynamics parameters (inertia and CoM)
+            %   from triangulation throught max optimization (density = const., mass = 1kg)
+            %
+            % Syntax
+            %   [CoM, I, tri] = cmpDynParams(tri)
+            %   ... = cmpDynParams(tri, swarm)
+            %   ... = cmpDynParams(tri, swarm, params)
+            %
+            % Input:
+            %   tri - Triangulation representing the component
+            %       triangulation
+            %   swarm - Problem solution
+            %           Used to continue the iteratie convergence of the algorithm
+            %       double(:, 3)
+            %   params - Struct with the following parameters
+            %       verbose - Progression and plots
+            %           default = false | logical
+            %       cycle - Number of optimization cycles
+            %           deafult = 100 | double(1, 1)
+            %       n_particle - Number of particles approximating the component
+            %           defualt = max(1.1*# of vertices, 100) | double(1, 1)
+            %       cost - Cost function to optimize during the particle positioning
+            %           deafult = @(x, swarm) min(sum((swarm - x).^2, 2)) (max(min(distances))) | function_handle
+            % Output:
+            %   CoM - Center of Mass
+            %       m (3x1) | double(3, 1)
+            %   I - Inertia matrix ([Ixx, Iyy, Izz, Iyz, Ixz, Ixy].')
+            %       kg m^2 (6x2) | double(6, 2)
+            %   swarm - Problem solution
+            %           Used to continue the iteratie convergence of the algorithm
+            %       double(:, 3)
+            %   tri - Triangulation representing the component
+            %       If the component presents some points not used, the algorithm will delete them
+            %       triangulation
+
+            arguments (Input)
+                tri {mustBeA(tri, 'triangulation')}
+                swarm {mustBeReal} = []
+                params {mustBeA(params, 'struct')} = struct('verbose', false, ...
+                    'cycle', 100, 'n_particles', )
+            end           
+
+            % Delete non-connected points
+            P = tri.Points; K = tri.ConnectivityList;
+            uniqueP = unique(K);
+            if size(uniqueP, 1) ~= size(P, 1)
+                for k = 1:size(uniqueP, 1), P(k, :) = P(uniqueP(k), :); K(K == uniqueP(k)) = k; end
+                tri = trangulation(K, P);
+            end
+
+            % Settings
+            if isempty(cycle), cycle = 100; end
+            try Tools.mustHaveSize(swarm, [n_particle, size(tri.Points, 2)]), catch, swarm = []; end
+            if verbose, fprintf(' --- Compute dynamic parmas. --- \n'), end
+
+            % Initialization
+            direction = rand(3, 1);
+            if isempty(swarm), swarm = tri.Points(randi(size(tri.Points, 1), n_particle, 1), :); end
+            cost_s = zeros(size(swarm, 1), 1);
+            for k = 1:length(cost_s), cost_s(k) = cost(swarm(k, :), swarm([1:k-1, k+1:end], :)); end
+            still = zeros(size(swarm, 1), 1); stillIter = 20; % --------------------------------------------------
+
+            if verbose
+                h = figure;
+                trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
+                grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
+                    'MarkerSize', 15, 'Color', [0 0.4470 0.7410]), hold off; drawnow
+            end
+
+            % Decomposition
+            if verbose, fprintf('Compute boundary conditions: '), strLenght = 0; end
+            dA = {size(tri.ConnectivityList, 1), 1};
+            for k = 1:size(tri.ConnectivityList, 1)
+                if verbose
+                    fprintf(repmat('\b', 1, strLenght))
+                    strLenght = fprintf('Iter %d of %d', k, size(tri.ConnectivityList, 1)); 
+                end
+                dA{k} = decomposition([[tri.Points(tri.ConnectivityList(k, :), :).'; 1, 1, 1], [-direction; 0]], 'auto');
+            end
+            if verbose, fprintf(repmat('\b', 1, strLenght)), fprintf('done\n'); end
+            
+            % Optimization procedure
+            if verbose, fprintf('Compute optimization: '), strLenght = 0; end
+            for iter = 1:cycle
+                if verbose
+                    fprintf(repmat('\b', 1, strLenght))
+                    strLenght = fprintf('Iter %d of %d', iter, cycle); 
+                end
+                
+                % New elements
+                sum_faces = zeros(size(swarm, 1), 1); swarm_new = swarm;
+                for k = 1:size(swarm, 1)
+                    if (still(k) > stillIter) && (cost_s(k) == 0)
+                        % Resample if too static
+                        still(k) = 0; swarm_new(k, :) = tri.Points(randi(size(tri.Points, 1), 1, 1), :);
+                    end
+                    index_1 = randi(size(swarm, 1)-1, 1, 1); index_1 = index_1 + (index_1 >= k);
+                    index_2 = randi(size(swarm, 2), 1, 1);
+                    swarm_new(k, index_2) = swarm_new(k, index_2) + ...
+                        (2*rand - 1)*(swarm_new(k, index_2) - swarm(index_1, index_2));
+                end
+                
+                % Check faces
+                for k = 1:length(dA)
+                    sum_faces = sum_faces + all((dA{k}\[swarm_new.'; ones(1, size(swarm_new, 1))]) > 0, 1).';
+                end
+                change = (mod(sum_faces, 2) == 0); swarm_new(change, :) = swarm(change, :);
+
+                % Update policy
+                for k = 1:size(swarm ,1)
+                    cost_new = cost(swarm_new(k, :), swarm([1:k-1, k+1:end], :));
+                    if cost_new >= cost_s(k)
+                        swarm(k, :) = swarm_new(k, :); cost_s(k) = cost_new;
+                    end
+                end
+
+                % Resample if static
+                still(cost_s == 0) = still(cost_s == 0) + 1;
+            end
+            if verbose, fprintf(repmat('\b', 1, strLenght)), fprintf('done\n'); end
+
+            % Figure
+            if verbose
+                figure(h)
+                trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
+                grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
+                    'MarkerSize', 15, 'Color', [0 0.4470 0.7410]), hold off
+            end
+
+            CoM = mean(swarm).'; xyz = swarm - CoM.';
+            I = [sum(xyz(:, [2, 3]).^2, 'all'), sum(xyz(:, [1, 3]).^2, 'all'), sum(xyz(:, [1, 2]).^2, 'all'), ...
+                -sum(xyz(:, 2).*xyz(:, 3), 'all'), -sum(xyz(:, 1).*xyz(:, 3), 'all'), -sum(xyz(:, 1).*xyz(:, 2), 'all')];
+            I = I/size(swarm, 1);
+        end
+
 
         % ------------------------- %
 
@@ -231,7 +372,7 @@ classdef Tools
                         case 'mustBeReal', mustBeReal(data)
                         case 'mustBeInteger', mustBeInteger(data)
                         case 'mustBeNonmissing', mustBeNonmissing(data)
-                        
+                        % mustHaveField - Validate that data has the desired filed
                         % Comparison with Other Values
                         case 'mustBeGreaterThan', multiInput = true; mustBeGreaterThan(data, checks{k}{2})
                         case 'mustBeLessThan', multiInput = true; mustBeLessThan(data, checks{k}{2})
@@ -269,6 +410,7 @@ classdef Tools
                         case 'mustBeSE3', Tools.mustBeSE3(data)
                         case 'mustHaveSize', multiInput = true; Tools.mustHaveSize(data, checks{k}{2})
                         case 'mustBeEmpty', Tools.mustBeEmpty(data)
+                        case 'mustHaveField', Tools.mustHaveField(data, checks{k}{2})    
                         % case '',
 
                         otherwise
@@ -301,6 +443,37 @@ classdef Tools
 
         % ------------------------- %
 
+        function mustHaveField(data, field)
+            % mustHaveField - Validate that data has the desired filed
+            %
+            % Syntax
+            %   mustHaveField(data, field)
+            %
+            % Input:
+            %   data - Data to validate
+            %       struct
+            %   field - Cell of char arry/string containing the fileds
+            %       cell(char array or string)
+
+            arguments
+                data {mustBeA(data, 'struct')}
+                field {mustBeText}
+            end
+
+
+            if all(isfield(data, field)), return
+            else
+                str = strcat(field, ''', '); str = strcat('''', str);
+                str = strjoin(str); str = str(1:end-1);
+                str1 = fieldnames(data); str1 = strcat(str1, ''', '); str1 = strcat('''', str1);
+                str1 = strjoin(str1); str1 = str1(1:end-1);
+                throw(MException('Tools:WrongData', 'Required fileds: {%s}\nActual fields: {%s}', ...
+                    str, str1))
+            end
+        end
+
+        % ------------------------- %
+
         function mustBeEmpty(data)
             % mustBeEmpty - Validate that data is empty
             %
@@ -315,7 +488,6 @@ classdef Tools
                 throw(MException('Tools:WrongData', 'Data must be empty'))
             catch, return
             end
-
         end
 
         % ------------------------- %

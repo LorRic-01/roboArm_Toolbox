@@ -1,5 +1,6 @@
-Pi = rand(100, 3);
+Pi = rand(10000, 3);
 K = convhull(Pi(:, 1), Pi(:, 2), Pi(:, 3));
+tri = triangulation(K,Pi);
 
 Pi = [[0, 0, 0].', [3, 0, 0].', [3, 0, 2].', [2, 0, 2].', [2, 0, 1].',...
     [1, 0, 1].', [1, 0, 2].', [0, 0, 2].', ...
@@ -85,6 +86,9 @@ count = sum(all(reshape(sol > 0, 4, []), 1));
 % quiver3(P(1), P(2), P(3), dir(1), dir(2), dir(3))
 % xlabel('x'), ylabel('y'), zlabel('z')
 
+%%
+Tools.cmpDynParams(tri, 1, true)
+
 %% Particle distribution
 
 n_part = 1000;
@@ -134,3 +138,50 @@ trimesh(tri, 'EdgeColor', 'b', 'FaceAlpha', 0.1)
 grid on, axis equal, hold on, plot3(particle(:, 1), particle(:, 2), particle(:, 3), '.', 'MarkerSize', 15)
 xlabel('x'), ylabel('y'), zlabel('z')
 
+
+%% Test
+
+in2m = 1/39.3701;
+model = createpde;
+model.Geometry = importGeometry('EndEffector_merge_fixed.stl');
+scale(model.Geometry, in2m);
+
+h = pdegplot(model);
+reducepatch(h(1), 0.5)
+
+tri = triangulation(h(1).Faces, h(1).Vertices);
+
+dA = {};
+for k = 1:size(tri.ConnectivityList, 1)
+    dA{end + 1} = decomposition([[tri.Points(tri.ConnectivityList(k, :), :).'; 1, 1, 1], [-dir; 0]], ...
+        'auto');
+end
+
+%%
+Pi = tri.Points;
+K = tri.ConnectivityList;
+C = unique(K);
+
+Pi_new = zeros(size(C, 1), size(Pi, 2));
+for k = 1:size(C, 1)
+    Pi(k, :) = Pi(C(k), :);
+    K(K == C(k)) = k;
+end
+
+tri_new = triangulation(K, Pi(1:size(C, 1), :));
+
+%%
+[CoM, I, swarm] = Tools.cmpDynParams(tri, true, swarm, 1000, 1000);
+
+cost = @(x, swarm) min(sum((swarm - x).^2, 2));
+cost_s = zeros(size(swarm, 1), 1);
+
+for k = 1:size(swarm, 1)
+    cost_s(k) = cost(swarm(k, :), swarm([1:k-1, k+1:end], :));
+end
+
+figure
+ trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
+                grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
+                    'MarkerSize', 15, 'Color', [0 0.4470 0.7410])
+plot3(CoM(1), CoM(2), CoM(3), '.r', 'MarkerSize', 15)
