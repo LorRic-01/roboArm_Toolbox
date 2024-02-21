@@ -61,9 +61,8 @@ classdef Joint < handle_light
     
     properties (Dependent)
         % A - Homogeneous matrix representing the (moved) joint
-        %   Set: set the frame of the previous joint
-        %   Get: get the joint (moved) frame
-        %       defualt = eye(4) | double(4, 4) or MX.sym(4, 4)
+        %   Set: set the frame of the previous joint [SE3(4, 4) | MX.sym(4, 4)]
+        %   Get: get the joint (moved) frame [MX.sym(4, 4)]
         A {Tools.mustHaveSize(A, [4, 4]), Tools.mustOr(A, {'mustBeA', 'casadi.MX'}, {'mustBeReal'})}
     end
 
@@ -204,7 +203,7 @@ classdef Joint < handle_light
             
             arguments
                 obj Joint,
-                jointValue {mustBeReal, Tools.mustOr(jointValue, {'mustHaveSize', [1, 1]}, {'mustBeEmpty'})} = obj.homePosition
+                jointValue {mustBeReal, mustBeScalarOrEmpty} = obj.homePosition
             end
             arguments (Repeating), specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})}, end
 

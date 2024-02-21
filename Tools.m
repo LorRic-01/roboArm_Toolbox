@@ -17,6 +17,7 @@ classdef Tools
     %   mustHaveSize - Validate that data has specific dimension
     %   mustOr - Validate if data is ... or ...
     %   plotFrames - Plot frame, passed as homogeneous matrix
+    %   plotTri - Plot triangulation
     %   rotTra - Check or generate roto-translation from data
     %   skew - Convert a 3d vector in its skew symmetric matrix representation
 
@@ -104,7 +105,7 @@ classdef Tools
         % ------------------------- %
 
         function [CoM, I, swarm, tri] = cmpDynParams(tri, swarm, params)
-            % cmpDynParams - Compute dynamics parameters (inertia and CoM)
+            % cmpDynParams - Compute dynamics parameters (CoM and inertiaw.r.t CoM)
             %   from triangulation throught max optimization (density = const., mass = 1kg)
             %
             % Syntax
@@ -119,14 +120,14 @@ classdef Tools
             %           Used to continue the iteratie convergence of the algorithm
             %       double(:, 3)
             %   params - Struct with the following parameters
-            %       verbose - Progression and plots
+            %       verbose - Print Command Window info and plots
             %           default = false | logical
             %       cycle - Number of optimization cycles
             %           deafult = 100 | double(1, 1)
-            %       n_particle - Number of particles approximating the component
+            %       n_p - Number of particles approximating the component
             %           defualt = max(1.1*# of vertices, 100) | double(1, 1)
             %       cost - Cost function to optimize during the particle positioning
-            %           deafult = @(x, swarm) min(sum((swarm - x).^2, 2)) (max(min(distances))) | function_handle
+            %           deafult = @(x, swarm) min(sum((swarm - x).^2, 2)) | function_handle
             % Output:
             %   CoM - Center of Mass
             %       m (3x1) | double(3, 1)
@@ -136,69 +137,79 @@ classdef Tools
             %           Used to continue the iteratie convergence of the algorithm
             %       double(:, 3)
             %   tri - Triangulation representing the component
-            %       If the component presents some points not used, the algorithm will delete them
-            %       triangulation
+            %       If the component has some points not used, the algorithm will delete them
+            %       in the triangulation
 
             arguments (Input)
                 tri {mustBeA(tri, 'triangulation')}
                 swarm {mustBeReal} = []
                 params {mustBeA(params, 'struct')} = struct('verbose', false, ...
-                    'cycle', 100, 'n_particles', )
+                    'cycle', 100, 'n_p', max(round(1.1*size(tri.Points, 1)), 100), ...
+                    'cost', @(x, swarm) max(mink(sum((swarm - x).^2, 2), 2)))
             end           
 
-            % Delete non-connected points
+            % --- Delete non-connected points or non-triangle --- %
             P = tri.Points; K = tri.ConnectivityList;
-            uniqueP = unique(K);
-            if size(uniqueP, 1) ~= size(P, 1)
-                for k = 1:size(uniqueP, 1), P(k, :) = P(uniqueP(k), :); K(K == uniqueP(k)) = k; end
-                tri = trangulation(K, P);
+            mask = true(size(K, 1), 1);
+            for k = 1:size(K, 1) % delete non triangular points
+                v = diff(P(K(k, :), :)); mask(k) = norm(cross(v(1, :), v(2, :))) > 0;
             end
+            K = K(mask, :); uniqueP = unique(K);
+            if size(uniqueP, 1) ~= size(P, 1) % delete multiple points
+                for k = 1:size(uniqueP, 1), P(k, :) = P(uniqueP(k), :); K(K == uniqueP(k)) = k; end
+            end
+            tri = triangulation(K, P(1:size(uniqueP, 1), :));
 
-            % Settings
-            if isempty(cycle), cycle = 100; end
-            try Tools.mustHaveSize(swarm, [n_particle, size(tri.Points, 2)]), catch, swarm = []; end
+            % --- Params initialization --- %
+            params_all = struct('verbose', false, ...
+                    'cycle', 100, 'n_p', max(round(1.1*size(tri.Points, 1)), 100), ...
+                    'cost', @(x, swarm) max(mink(sum((swarm - x).^2, 2), 2)));
+            fields = fieldnames(params_all);
+            for k = 1:length(fields)
+                if ~isfield(params, fields(k)) || isempty(params.(fields{k}))
+                    params.(fields{k}) = params_all.(fields{k});
+                end
+            end
+            verbose = params.verbose; cycle = params.cycle; n_p = params.n_p; cost = params.cost;
+
+            % --- Initialization --- %
+            try Tools.mustHaveSize(swarm, [n_p, size(tri.Points, 2)]), catch, swarm = []; end
+            if isempty(swarm), swarm = tri.Points(randi(size(tri.Points, 1), n_p, 1), :); end
             if verbose, fprintf(' --- Compute dynamic parmas. --- \n'), end
 
-            % Initialization
-            direction = rand(3, 1);
-            if isempty(swarm), swarm = tri.Points(randi(size(tri.Points, 1), n_particle, 1), :); end
+            direction = rand(3, 1);     % checking direction
             cost_s = zeros(size(swarm, 1), 1);
-            for k = 1:length(cost_s), cost_s(k) = cost(swarm(k, :), swarm([1:k-1, k+1:end], :)); end
-            still = zeros(size(swarm, 1), 1); stillIter = 20; % --------------------------------------------------
+            for k = 1:length(cost_s), cost_s(k) = cost(swarm(k, :), swarm); end
 
+            % --- Plot --- %
             if verbose
-                h = figure;
-                trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
-                grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
-                    'MarkerSize', 15, 'Color', [0 0.4470 0.7410]), hold off; drawnow
+                h = figure; clf
+                trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1, 'LineWidth', 0.1)
+                grid on, axis equal, axis padded, hold on
+                plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', 'MarkerSize', 15, 'Color', [0 0.4470 0.7410])
+                drawnow
             end
 
-            % Decomposition
+            % --- Bound matrix decomposition --- %
             if verbose, fprintf('Compute boundary conditions: '), strLenght = 0; end
-            dA = {size(tri.ConnectivityList, 1), 1};
+            dA = cell(size(tri.ConnectivityList, 1), 1);
             for k = 1:size(tri.ConnectivityList, 1)
-                if verbose
-                    fprintf(repmat('\b', 1, strLenght))
-                    strLenght = fprintf('Iter %d of %d', k, size(tri.ConnectivityList, 1)); 
-                end
+                if verbose, strLenght = fprintf([repmat('\b', 1, strLenght), 'Iter %d of %d'], k, size(dA, 1)) - strLenght; end
                 dA{k} = decomposition([[tri.Points(tri.ConnectivityList(k, :), :).'; 1, 1, 1], [-direction; 0]], 'auto');
             end
             if verbose, fprintf(repmat('\b', 1, strLenght)), fprintf('done\n'); end
             
-            % Optimization procedure
+            % --- Optimization procedure --- %
             if verbose, fprintf('Compute optimization: '), strLenght = 0; end
             for iter = 1:cycle
-                if verbose
-                    fprintf(repmat('\b', 1, strLenght))
-                    strLenght = fprintf('Iter %d of %d', iter, cycle); 
-                end
+                if verbose, strLenght = fprintf([repmat('\b', 1, strLenght), 'Iter %d of %d'], iter, cycle) - strLenght; end
                 
                 % New elements
                 sum_faces = zeros(size(swarm, 1), 1); swarm_new = swarm;
                 for k = 1:size(swarm, 1)
-                    if (still(k) > stillIter) && (cost_s(k) == 0)
+                    if (cost_s(k) == 0) && (iter > 1)
                         % Resample if too static
-                        still(k) = 0; swarm_new(k, :) = tri.Points(randi(size(tri.Points, 1), 1, 1), :);
+                        swarm_new(k, :) = tri.Points(randi(size(tri.Points, 1), 1, 1), :);
                     end
                     index_1 = randi(size(swarm, 1)-1, 1, 1); index_1 = index_1 + (index_1 >= k);
                     index_2 = randi(size(swarm, 2), 1, 1);
@@ -214,31 +225,33 @@ classdef Tools
 
                 % Update policy
                 for k = 1:size(swarm ,1)
-                    cost_new = cost(swarm_new(k, :), swarm([1:k-1, k+1:end], :));
+                    cost_new = cost(swarm_new(k, :), swarm);
                     if cost_new >= cost_s(k)
                         swarm(k, :) = swarm_new(k, :); cost_s(k) = cost_new;
                     end
                 end
 
-                % Resample if static
-                still(cost_s == 0) = still(cost_s == 0) + 1;
+                % Permuting array
+                perm = randperm(size(swarm, 1));
+                swarm = swarm(perm, :); cost_s = cost_s(perm);
             end
             if verbose, fprintf(repmat('\b', 1, strLenght)), fprintf('done\n'); end
 
-            % Figure
+            % --- Plot --- %
             if verbose
-                figure(h)
-                trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
-                grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
-                    'MarkerSize', 15, 'Color', [0 0.4470 0.7410]), hold off
+                figure(h); clf
+                trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1, 'LineWidth', 0.1)
+                grid on, axis equal, axis padded, hold on
+                plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', 'MarkerSize', 15, 'Color', [0 0.4470 0.7410])
+                drawnow
             end
 
+            % --- Compute params --- %
             CoM = mean(swarm).'; xyz = swarm - CoM.';
             I = [sum(xyz(:, [2, 3]).^2, 'all'), sum(xyz(:, [1, 3]).^2, 'all'), sum(xyz(:, [1, 2]).^2, 'all'), ...
                 -sum(xyz(:, 2).*xyz(:, 3), 'all'), -sum(xyz(:, 1).*xyz(:, 3), 'all'), -sum(xyz(:, 1).*xyz(:, 2), 'all')];
             I = I/size(swarm, 1);
         end
-
 
         % ------------------------- %
 
@@ -264,7 +277,7 @@ classdef Tools
                 if det(I) < 0, throw(MException('Tools:WrongData', ...
                         'Inertia matrices shold be positive semi-definite. Check data'))
                 end
-                I_conv = [diag(I), I(2, 3), I(1, 3), I(1, 2)];
+                I_conv = [diag(I); I(2, 3); I(1, 3); I(1, 2)];
             else
                 I_conv = diag(I(1:3)) + squareform(flip(I(4:end)));
                 if det(I_conv) < 0, throw(MException('Tools:WrongData', ...
@@ -331,6 +344,40 @@ classdef Tools
                         dataTipTextRow('Pos [m]: ', {T.'}), dataTipTextRow('RPY [deg]: ', {rotm2eul(R, 'XYZ')*180/pi})];
                 if k == 1, q.Marker = '.'; q.MarkerSize = 15; q.MarkerEdgeColor = 'k'; end
             end
+            xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]'), axis equal, hold off
+        end
+
+        % ------------------------- %
+
+        function plotTri(tri, A, specifics)
+            % plotTri - Plot triangulation
+            %
+            % Syntax
+            %   plotTri(tri)
+            %   plotTri(tri, A)
+            %   plotTri(tri, A, specifics)
+            %
+            % Input:
+            %   tri - Triangulation object
+            %       triangulation
+            %   A - Homogeneous matrix frame
+            %       belong to SE(3) | default = eye(4) | double(4, 4)
+            %   specifics - Surface style
+            %       default = {'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1}
+            %       See also matlab.graphics.chart.primitive.Surface
+            
+            arguments, tri {mustBeA(tri, 'triangulation')}, A {Tools.mustBeSE3} = eye(4), end
+            arguments (Repeating), specifics, end
+
+            if isempty(specifics), specifics = {'FaceColor', [0 0.4470 0.7410], ...
+                    'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1}; end
+
+            if ~isequal(A, eye(4))
+                P = tri.Points; P = A*[P.'; ones(1, size(P, 1))];
+                tri = triangulation(tri.ConnectivityList, P(1:3, :).');
+            end
+
+            hold on, trimesh(tri, specifics{:}); hold off
             xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]'), axis equal, hold off
         end
 

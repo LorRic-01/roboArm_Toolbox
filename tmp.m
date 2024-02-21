@@ -1,6 +1,10 @@
-Pi = rand(10000, 3);
+Pi = rand(100000, 3);
 K = convhull(Pi(:, 1), Pi(:, 2), Pi(:, 3));
 tri = triangulation(K,Pi);
+
+[x,y,z] = sphere(10);
+fvc = surf2patch(x,y,z,z,'triangles');
+tri = triangulation(fvc.faces, fvc.vertices);
 
 Pi = [[0, 0, 0].', [3, 0, 0].', [3, 0, 2].', [2, 0, 2].', [2, 0, 1].',...
     [1, 0, 1].', [1, 0, 2].', [0, 0, 2].', ...
@@ -171,17 +175,19 @@ end
 tri_new = triangulation(K, Pi(1:size(C, 1), :));
 
 %%
-[CoM, I, swarm] = Tools.cmpDynParams(tri, true, swarm, 1000, 1000);
-
+params = struct('verbose', true, ...
+                    'cycle', 100, 'n_p', 100);
+[CoM, I, swarm, tri] = Tools.cmpDynParams(tri, swarm, params);
+CoM, I{:}
 cost = @(x, swarm) min(sum((swarm - x).^2, 2));
 cost_s = zeros(size(swarm, 1), 1);
 
 for k = 1:size(swarm, 1)
     cost_s(k) = cost(swarm(k, :), swarm([1:k-1, k+1:end], :));
 end
-
-figure
- trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
-                grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
-                    'MarkerSize', 15, 'Color', [0 0.4470 0.7410])
-plot3(CoM(1), CoM(2), CoM(3), '.r', 'MarkerSize', 15)
+% 
+% figure
+%  trimesh(tri, 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
+%                 grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
+%                     'MarkerSize', 15, 'Color', [0 0.4470 0.7410])
+% plot3(CoM(1), CoM(2), CoM(3), '.r', 'MarkerSize', 15)

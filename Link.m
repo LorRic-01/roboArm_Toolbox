@@ -13,8 +13,12 @@ classdef Link < handle_light
     %
     % Joint Methods:
     %   Link - Class constructor
+    %   toString - Plot in the command window object data
+    %   addVisual - Add visual geometries
     %   copyRigidBody - Copy rigidBody in a Link object
-    %
+
+
+    % ---------------- Properties ---------------------- %
 
     properties
         % name - Joint name
@@ -41,11 +45,22 @@ classdef Link < handle_light
 
     % ------------------------- %
 
-    properties (SetAccess = {?Link})
+    properties (SetAccess = {?Link, ?Arm})
+        % Visual -Link's visual geometry associated to specific frame ([j2p, c2j])
+        %   cell(1,2) {triangulation}
+        visual {mustBeA(visual, 'cell'), Tools.mustHaveSize(visual, [1, 2])} = cell(1, 2)
 
+        % parent - Index of link which the current link is attached to
+        %   default = [] | double(1, 1)
+        parent {mustBeInteger, mustBePositive, mustBeScalarOrEmpty} = []
+
+        % child - Index of link(s) attached to the current link
+        %   default = [] | double(1, :)
+        child {mustBeVector, mustBePositive} = zeros(1, 0)
     end
 
-    % -------------------------------------------------- %
+
+    % ----------------- Functions ---------------------- %
 
     methods
         % ----- Constructor ----- %
@@ -101,6 +116,174 @@ classdef Link < handle_light
 
         % ------------------------- %
 
+        function addVisual(obj, type, frames, data, tform)
+            % addVisual - Add visual geometries
+            %   Visual geometry frame ([0, 0, 0], xyz-axis) attached to the indicated frame
+            %
+            % Syntax
+            %   addVisual(type)
+            %   addVisual(type, frames)
+            %   addVisual(type, frames, data)
+            %   addVisual(type, frames, data, tform)
+            %
+            % Input:
+            %   type - Type of passed geometry
+            %       in {'empty', 'box', 'cyl', 'pde', 'stl', 'tri'} | default = 'empty' | char array or string
+            %   frames - FRames to attach the visual to
+            %       in {'j2p', 'c2j', 'both'} | deafult = 'j2p' | char array or string
+            %   data - Visual data to pass for each 'type' of object
+            %       empty -> no visual
+            %       box   -> [l_x, l_y, l_z]
+            %       cyl   -> [radius, l_z]
+            %       pde   -> pde.DiscreteGeometry object
+            %       stl   -> STL file name
+            %       tri   -> triangulation
+            %   tform - Roto-translation homogeneous matrix w.r.t 'frame' frame
+            %       blong to SE(3) | default = eye(4) | double(4, 4)
+            
+            arguments, obj Link
+                type {mustBeMember(type, {'empty', 'box', 'cyl', 'pde', 'stl', 'tri'})} = 'empty'
+                frames {mustBeMember(frames, {'j2p', 'c2j', 'both'})} = 'j2p'
+                data {Tools.mustOr(data, {'mustBeA', {'triangulation', 'pde.DiscreteGeometry'}}, ...
+                    'mustBeFile', 'mustBeVector')} = zeros(1, 0)
+                tform {Tools.mustBeSE3} = eye(4)
+            end
+
+            switch frames
+                case 'j2p', frames = 1; case 'c2j', frames = 2;
+                case 'both', frames = [1, 2];
+            end
+
+            % Empty obj
+            if strcmp(type, 'empty'), obj.visual{frames} = cell(length(frames), 1); return, end
+
+            % Compute visual
+            for k = frames
+                switch type
+                    case 'box', mustBeReal(data),
+                        if numel(data) < 3
+                            warning('Wrong dimension for cyl visual element.\nPassed: [%s]\nDesired: [%s]', num2str(size(data)), num2str([2, 1]))
+                            data = data(1)*ones(3, 1);
+                        end
+                        model = multicuboid(data(1), data(2), data(3));
+                    case 'cyl', mustBeReal(data)
+                        if numel(data) < 2
+                            warning('Wrong dimension for cyl visual element.\nPassed: [%s]\nDesired: [%s]', num2str(size(data)), num2str([2, 1]))
+                            data = data(1)*ones(2, 1);
+                        end
+                        model = multicylinder(data(1), data(2));
+                    case 'pde', mustBeA(data, 'pde.DiscreteGeometry')
+                        model = data;
+                    case 'stl', mustBeFile(data)
+                        if ~strcmp(data(end-2:end), 'stl'), throw(MException('Link:WrongData', 'Methods only accept .stl files')), end
+                        model = createpde; model.Geometry = importGeometry(data);
+                    case 'tri', mustBeA(data, 'triangulation'), Faces = data.Faces; Vertices = data.Vertices;
+                end
+
+                if ~strcmp(type, 'tri')
+                    h1 = figure; h = pdegplot(model); Faces = h(1).Faces; Vertices = h(1).Vertices; close(h1)
+                end
+                
+                % Apply tform
+                Vertices = tform*[Vertices.'; ones(1, size(Vertices, 1))];
+                Vertices = Vertices(1:3, :).';
+                obj.visual{k} = triangulation(Faces, Vertices);
+            end
+        end
+
+        % ------------------------- %
+        
+        function cmpDynParam(obj, params)
+            % cmpDynParam - Compute dynamics parameters (CoM and I) using
+            %   visual information
+            %
+            % Syntax
+            %   cmpDynParam
+            %   cmpDynParam(parms)
+            %
+            % Input:
+            %   params - Struct with the following parameters
+            %       verbose - Print Command Window info and plots
+            %           default = false | logical
+            %       cycle - Number of optimization cycles
+            %           deafult = 100 | double(1, 1)
+            %       n_p - Number of particles approximating the component
+            %           defualt = max(1.1*# of vertices, 100) | double(1, 1)
+            %       cost - Cost function to optimize during the particle positioning
+            %           deafult = @(x, swarm) min(sum((swarm - x).^2, 2)) | function_handle
+            
+            arguments
+                obj Link
+                params {mustBeA(params, 'struct')} = struct()
+            end
+
+            for k = 1:length(obj.visual)
+                if isempty(obj.visual{k})
+                    obj.CoM(:, k) = zeros(3, 1); obj.I(:, k) = zeros(6, 1);
+                else
+                    [obj.CoM(:, k), obj.I(:, k), ~, obj.visual{k}] = ...
+                        Tools.cmpDynParams(obj.visual{k}, [], params);
+                    
+                    obj.I(:, k) = Tools.inertiaConv(Tools.inertiaConv(obj.I(:, k)) + norm(obj.CoM(:, k)).^2*eye(3) - (obj.CoM(:, k))*(obj.CoM(:, k).'));
+                    if obj.mass(:, k), obj.I(:, k) = obj.I(:, k)*obj.mass(:, k);
+                    else, obj.I(:, k) = zeros(6, 1);
+                    end
+                end
+            end
+        end
+
+        % ------------------------- %
+
+        function plot(obj, jointValue, specifics)
+            % plot - Plot Link object, namely Joint and visual
+            % Frame legend:
+            %   - dotted line: parent joint frame ('parent')
+            %   - full line: (moved) joint frame ('joint')
+            %   - dashed line: child(ren) frame ('child')
+            %
+            % Syntax
+            %   plot(jointValue)
+            %   plot(jointValue, specific_1, specific_2, ...)
+            %
+            % Input:
+            %   jointValue - Joint value
+            %       rad or m | default = homePosition | empty or double(1, 1)
+            %   specifics - Frame(s) to show
+            %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
+            
+            arguments
+                obj Link,
+                jointValue {mustBeReal, mustBeScalarOrEmpty} = obj.joint.homePosition
+            end
+            arguments (Repeating), specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})}, end
+
+            if isempty(jointValue), jointValue = obj.joint.homePosition; end
+            if isempty(specifics), specifics = {'joint'}; end
+
+            % Plot joint
+            obj.joint.plot(jointValue, specifics{:})
+            if isa(obj.joint.Ab, 'casadi.MX'), return, end
+
+            if any(ismember(specifics, 'all')), specifics = {'parent', 'joint', 'child'}; end
+            specifics = unique(specifics);
+
+            A_fun = obj.joint.A; A_val = full(A_fun(jointValue));
+            for k = 1:length(specifics)
+                if strcmp(specifics{k}, 'child')
+                    if isempty(obj.visual{2}), continue, end
+                    Tools.plotTri(obj.visual{2}, A_val, 'FaceColor', [0.8500 0.3250 0.0980], 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
+                else
+                    if isempty(obj.visual{1}), continue, end
+                    Tools.plotTri(obj.visual{1}, obj.joint.Ab, 'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1)
+                end
+            end
+        end
+    end
+
+
+    % ---------------- Get/set fun. -------------------- %
+
+    methods
         function set.I(obj, inertia)
             % Check that data represents an inertia matrix during inesertion
             % Input:
@@ -114,7 +297,8 @@ classdef Link < handle_light
         end
     end
 
-    % -------------------------------------------------- %
+
+    % ------------------- Static ----------------------- %
 
     methods (Static)
         function linkObj = copyRigidBody(rigidBodyObj, frame)
