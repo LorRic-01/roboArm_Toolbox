@@ -4,22 +4,25 @@ classdef Tools
     %   problem definition and object visualization
     %
     % Tools Methods:
-    %   addCasADiToPath - Add CasADi folder to Matlab path
     %   checkCasADi - Check if CasADi folder is already in Matlab path
-    %   cmpDynParams - Compute dyn. params (I and CoM) from triangulation
+    %   cmpDynParams - Compute dynamics parameters (CoM and inertia w.r.t CoM)
+    %   convertToString - Convert data into string/char array
     %   inertiaConv - Inertia matrix-vector conversion
-    %   isAxis - Check if data is member of {'x', 'y', 'z'} group or
-    %   mustBeAxis - Validate that data is axis
+    %   isAxis - Check if data is an admissible axis
+    %   isUnique - Check if data is composed only of unique data
+    %   mustAndOr - Validate if data is ... {and, or} ...
+    %   mustBeAxis - Validate that data represents axis
     %   mustBeEmpty - Validate that data is empty
     %   mustBeNonzeroNorm - Validate that data has non zero norm
-    %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3)    
+    %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3))
+    %   mustBeUnique - Validate that data is composed only of unique data
     %   mustHaveField - Validate that data has the desired filed
     %   mustHaveSize - Validate that data has specific dimension
-    %   mustOr - Validate if data is ... or ...
     %   plotFrames - Plot frame, passed as homogeneous matrix
     %   plotTri - Plot triangulation
     %   rotTra - Check or generate roto-translation from data
     %   skew - Convert a 3d vector in its skew symmetric matrix representation
+
 
     properties (Constant = true, Access = private, Hidden = true)
         % tim - Timer used to avoid multiple error report
@@ -30,6 +33,7 @@ classdef Tools
     % -------------------------------------------------- %
 
     methods (Static)
+        
         function addCasADiToPath(searchPath)
             % addCasADiToPath - Add CasADi folder to Matlab path
             %   Two available options:
@@ -45,14 +49,17 @@ classdef Tools
             % Input:
             %   searchPath - Folder containing the 'casadi*' folder (absolute path)
             %       default = userpath | char array or string
-
+            %       Validation: mustBeTextScalar, mustBeFolder OR mustBeMember(..., 'UI')
+            %
+            % See also Tools.mustAndOr, mustBeTextScalar, mustBeFolder, mustBeMember
+        
             arguments 
-                searchPath {Tools.mustOr(searchPath, 'mustBeFolder', {'mustBeMember', 'UI'})} = userpath
+                searchPath {mustBeTextScalar, Tools.mustAndOr('or', searchPath, 'mustBeFolder', [], 'mustBeMember', 'UI')} = userpath
             end
-
+        
             % Avoid re-search if already in path
             if contains(path, 'casadi', 'IgnoreCase', ispc), return, end
-
+        
             switch searchPath
                 case 'UI' % User Interface
                     searchPath = uigetdir(userpath, 'Select CasADi folder');
@@ -61,13 +68,13 @@ classdef Tools
                     elseif isunix % Linux
                         [status, files] = system(['ls ', searchPath]);
                     elseif ismac % Mac                                          % ----- TO IMPLEMENT ----- %
-                    else, throw(MException('Tools:NotimplementedSystem', ...
+                    else, throw(MException('Tools:notImplementedSystem', ...
                             'Not recognized system. Available systems: Windows, Linux, Mac'));
                     end
-
+        
                     % Extract if exists casadi folder
                     if status % fail system call
-                        throw(MException('Tools:MissingFolder', ...
+                        throw(MException('Tools:missingFolder', ...
                             'Missing ''casadi*'' folder in path %s', searchPath))
                     end
                     files = strsplit(files, {' ', '\n'});
@@ -75,12 +82,12 @@ classdef Tools
                         if startsWith(files{k}, 'casadi'), files = files{k}; break, end
                     end
                     if isa(files, 'cell') % missing folder
-                        throw(MException('Tools:MissingFolder', ...
+                        throw(MException('Tools:missingFolder', ...
                             'Missing ''casadi*'' folder in path %s', searchPath))
                     end
                     searchPath = [searchPath, '/', files];
             end
-
+        
             % Add casadi* folder path
             lastwarn(''); addpath(searchPath)
             if ~isempty(lastwarn), throw(MException('Tools:addpathError', ...
@@ -89,24 +96,9 @@ classdef Tools
 
         % ------------------------- %
 
-        function checkCasADi
-            % checkCasADi - Check if CasADi folder is already in Matlab path
-            %
-            % Syntax
-            %   checkCasADi
-
-            if contains(path, 'casadi', 'IgnoreCase', ispc), return, end
-            if strcmp(Tools.tim.Running, 'off')
-                Tools.tim.start
-                warning('Required CasADi toolbox. See Tools.addCasADiToPath to help adding CasADi folder.')
-            end
-        end
-
-        % ------------------------- %
-
         function [CoM, I, swarm, tri] = cmpDynParams(tri, swarm, params)
-            % cmpDynParams - Compute dynamics parameters (CoM and inertiaw.r.t CoM)
-            %   from triangulation throught max optimization (density = const., mass = 1kg)
+            % cmpDynParams - Compute dynamics parameters (CoM and inertia w.r.t CoM)
+            %   from triangulation throught max optimization
             %
             % Syntax
             %   [CoM, I, tri] = cmpDynParams(tri)
@@ -116,6 +108,7 @@ classdef Tools
             % Input:
             %   tri - Triangulation representing the component
             %       triangulation
+            %       Validation: mustBeA(..., 'triangulation')
             %   swarm - Problem solution
             %           Used to continue the iteratie convergence of the algorithm
             %       double(:, 3)
@@ -142,7 +135,7 @@ classdef Tools
 
             arguments (Input)
                 tri {mustBeA(tri, 'triangulation')}
-                swarm {mustBeReal} = []
+                swarm {mustBeReal, mustBeFinite, mustBeNonNan} = []
                 params {mustBeA(params, 'struct')} = struct('verbose', false, ...
                     'cycle', 100, 'n_p', max(round(1.1*size(tri.Points, 1)), 100), ...
                     'cost', @(x, swarm) max(mink(sum((swarm - x).^2, 2), 2)))
@@ -255,57 +248,433 @@ classdef Tools
 
         % ------------------------- %
 
+        function checkCasADi
+            % checkCasADi - Check if CasADi folder is already in Matlab path
+            %
+            % Syntax
+            %   checkCasADi
+
+            if contains(path, 'casadi', 'IgnoreCase', ispc), return, end
+            if strcmp(Tools.tim.Running, 'off')
+                Tools.tim.start
+                warning('Missing CasADi toolbox/folder. See Tools.addCasADiToPath to help adding CasADi folder.')
+            end
+        end
+
+        % ------------------------- %
+
+        function str = convertToString(data)
+            % convertToString - Convert data into string/char array
+            %
+            % Syntax
+            %   str = convertToString(data)
+            %
+            % Input:
+            %   data - Data to convert
+            % Output:
+            %   str - String representing the data
+            %       char array or string
+           
+            str = '';
+            if isnumeric(data) || islogical(data)
+                if isscalar(data), str = num2str(data); return
+                elseif isvector(data)
+                    if size(data, 1) ~= numel(data), str = ['[', num2str(data), ']']; return
+                    else, str = ['[', num2str(data.'), ']^T']; return
+                    end
+                else
+                    for k = 1:size(data, 1), str = [str, Tools.convertToString(data(k, :)), ';']; end
+                    str = ['[', str(1:end-1), ']'];
+                end
+                return
+            end
+            if isstring(data), str = ['"', data, '"']; return, end
+            if ischar(data), str = ['''', data, '''']; return, end
+        
+            if iscell(data)
+                for k = 1:length(data)
+                    data{k} = Tools.convertToString(data{k});
+                end
+                data = strcat(data, ', ');
+                str = strjoin(data); str = ['{', str(1:end-1), '}']; return
+            end
+        
+            warning('Not supported data conversion')
+        end
+        
+        % ------------------------- %
+
         function I_conv = inertiaConv(I)
             % inertiaConv - Inertia matrix-vector conversion. Check also if
             % data represents an admissible inertia matrix
             %   (Inertia vector [Ixx, Iyy, Izz, Iyz, Ixz, Ixy])
             %
             % Syntax
+            %   inertiaConv(I)
             %   I_conv = inertiaConv(I)
             %
             % Input:
             %   I - Inertia matrix (vector)
-            %       double(3, 3) (double(6, 1))
+            %       double(3, 3) (double(6, 1) or double(1, 6))
+            %       Validation: mustBeNumeric, mustBeReal, ...
+            %           mustHaveSize(..., [6, 1]) OR mustHaveSize(..., [1, 6]) OR mustHaveSize(..., [3, 3])
             % Output:
             %   I_conv - Inertia vector (matrix)
             %       double(6, 1) (double(3, 3))
+            %
+            % See also mustBeNumeric, mustBeReal, Tools.mustAndOr, Tools.mustHaveSize
             
-            arguments, I {mustBeReal, Tools.mustOr(I, {'mustHaveSize', [6, 1]}, ...
-                    {'mustHaveSize', [3, 3]})}, end
+            arguments, I {mustBeNumeric, mustBeReal ...
+                    Tools.mustAndOr('or', I, 'mustHaveSize', [6, 1], 'mustHaveSize', [1, 6], ...
+                    'mustHaveSize', [3, 3])}, end
 
             if isequal(size(I), [3, 3])
-                if det(I) < 0, throw(MException('Tools:WrongData', ...
-                        'Inertia matrices shold be positive semi-definite. Check data'))
-                end
                 I_conv = [diag(I); I(2, 3); I(1, 3); I(1, 2)];
+                if det(I) < 0, throw(MException('Tools:notInertia', ...
+                        ['Inertia matrices shold be positive semi-definite. Check data' ...
+                        '\nI = [Ixx, Iyy, Izz, Iyz, Ixz, Ixy] = %s'], Tools.convertToString(I_conv)))
+                end
             else
                 I_conv = diag(I(1:3)) + squareform(flip(I(4:end)));
-                if det(I_conv) < 0, throw(MException('Tools:WrongData', ...
-                        'Inertia matrices must be positive semi-definite. Check data'))
+                if det(I_conv) < 0, throw(MException('Tools:notInertia', ...
+                        ['Inertia matrices shold be positive semi-definite. Check data' ...
+                        '\nI = [Ixx, Iyy, Izz, Iyz, Ixz, Ixy] = %s'], Tools.convertToString(I)))
+                end
+            end
+        end
+
+
+        % ------------------------- %
+        
+        function axis = isAxis(data)
+            % isAxis - Check if data is member of {'x', 'y', 'z'} group or
+            %   is a non-zero norm triplet and return the correspondednt normalized
+            %   vector    
+            %       
+            % Syntax
+            %   isAxis(data)
+            %   axis = isAxis(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %       double(3, 1) or {char array or string}
+            %       Validation (mustBeNonzeroNorm AND mustHaveSize(..., [3,1])) OR ...
+            %           (mustBeTextScalar AND mustBeMember(..., {'x', 'y', 'z'}))
+            % Output:
+            %   axis - Normalized axis
+            %       double(3, 1)
+            %
+            % See also Tools.mustAndOr, Tools.mustBeNonzeroNorm, Tools.mustHaveSize, mustBeMember, mustBeTextScalar
+        
+            arguments
+                data {Tools.mustAndOr('or', data, ...
+                    'mustAndOr', {'and', 'mustBeNonzeroNorm', [], 'mustHaveSize', [3, 1]}, ...
+                    'mustAndOr', {'and', 'mustBeTextScalar', [], 'mustBeMember', {'x', 'y', 'z'}})}
+            end
+            
+            if isnumeric(data)
+                axis = data/norm(data);
+            else
+                switch data
+                    case 'x', axis = [1, 0, 0].';
+                    case 'y', axis = [0, 1, 0].';
+                    case 'z', axis = [0, 0, 1].';
                 end
             end
         end
 
         % ------------------------- %
 
-        function A = skew(w)
-            % skew - Convert a 3d vector in its skew symmetric matrix representation
+        function [check, data_u] = isUnique(data)
+            % isUnique - Check if data is composed only of unique data
+            %   (Use unique function)
             %
             % Syntax
-            %   A = skew(w)
+            %   check = isUnique(data)
+            %   [check, data_u] = isUnique(data)
             %
             % Input:
-            %   w - Vector
-            %       ...(3, 1) or ...(1, 3)
+            %   data - Data to validate
             % Output:
-            %   A - Skew symmetric matrix
-            %       ...(3, 3)
+            %   check - True if data is composed only of unique data
+            %       logic
+            %   data_u - Unique data
+            %
+            % See also unique
 
-            arguments, w {mustBeVector}, end
-            if size(w, 1) ~= 1, w = w.'; end
-            Tools.mustHaveSize(w, [1, 3])
+            data_u = unique(data);
+            if isequal(size(data_u), size(data))
+                check = true; return
+            end
+            check = false;
+        end
 
-            A = [[0 -w(3), w(2)]; [w(3), 0, -w(1)]; [-w(2), w(1), 0]];
+        % ------------------------- %
+
+        function mustAndOr(andOr, data, checks, params)
+            % mustAndOr - Validate if data is ... {and, or} ...
+            %
+            % Syntax
+            %   mustAndOr(andOr, data, check1, param1, check2, param2, ...)
+            %
+            % Input:
+            %   andOr - Selection between 'and'/'or' operator
+            %       in {'and', 'or'} | char array or string
+            %       Validation: mustBeMember(..., {'and', 'or'}), mustBeTextScalar
+            %   data - Data to check
+            %   check - Validation method passed as string
+            %       e.g. 'mustBeMember', 'mustBeNumeric' | char array or string
+            %       Validation: mustBeTextScalar
+            %   param - Cell array containing name of the check and other params
+            %       e.g. {'a', 'b', 'c'}
+            %
+            % See also mustBeMember, mustBeTextScalar
+        
+            arguments, andOr {mustBeMember(andOr, {'and', 'or'}), mustBeTextScalar}, data, end
+            arguments (Repeating), checks {mustBeTextScalar}, params, end
+        
+            if isempty(checks), return, end
+        
+            errorReport = '';
+            for k = 1:length(checks)
+                try
+                    done = true;
+                    switch checks{k}
+                        % Numeric Value Attributes
+                        case 'mustBePositive', mustBePositive(data)
+                        case 'mustBeNonpositive', mustBeNonpositive(data)
+                        case 'mustBeNonnegative', mustBeNonnegative(data)
+                        case 'mustBeNegative', mustBeNegative(data)
+                        case 'mustBeFinite', mustBeFinite(data)
+                        case 'mustBeNonNan', mustBeNonNan(data)
+                        case 'mustBeNonzero', mustBeNonzero(data)
+                        case 'mustBeNonsparse', mustBeNonsparse(data)
+                        case 'mustBeSparse', mustBeSparse(data)
+                        case 'mustBeReal', mustBeReal(data)
+                        case 'mustBeInteger', mustBeInteger(data)
+                        case 'mustBeNonmissing', mustBeNonmissing(data)
+                        
+                        % Comparison with Other Values
+                        case 'mustBeGreaterThan', mustBeGreaterThan(data, params{k})
+                        case 'mustBeLessThan', mustBeLessThan(data, params{k})
+                        case 'mustBeGreaterThanOrEqual', mustBeGreaterThanOrEqual(data, params{k})
+                        case 'mustBeLessThanOrEqual', mustBeLessThanOrEqual(data, params{k})
+                        
+                        % Data Types
+                        case 'mustBeA', mustBeA(data, params{k})
+                        case 'mustBeNumeric', mustBeNumeric(data)
+                        case 'mustBeNumericOrLogical', mustBeNumericOrLogical(data)
+                        case 'mustBeFloat', mustBeFloat(data)
+                        case 'mustBeUnderlyingType', mustBeUnderlyingType(data, params{k})
+        
+                        % Size
+                        case 'mustBeNonempty', mustBeNonempty(data)
+                        case 'mustBeScalarOrEmpty', mustBeScalarOrEmpty(data)
+                        case 'mustBeVector', mustBeVector(data)
+        
+                        % Membership and Range
+                        case 'mustBeMember', mustBeMember(data, params{k}) 
+                        case 'mustBeInRange', mustBeInRange(data, params{k})
+                        
+                        % Text
+                        case 'mustBeFile', mustBeFile(data)
+                        case 'mustBeFolder', mustBeFolder(data)
+                        case 'mustBeNonzeroLengthText', mustBeNonzeroLengthText(data)
+                        case 'mustBeText', mustBeText(data) 
+                        case 'mustBeTextScalar', mustBeTextScalar(data)
+                        case 'mustBeValidVariableName', mustBeValidVariableName(data) 
+                        
+        
+                        % Custom
+                        case 'mustAndOr',Tools.mustAndOr(params{k}{1}, data, params{k}{2:end})
+                        case 'mustBeAxis', Tools.mustBeAxis(data)
+                        case 'mustBeEmpty', Tools.mustBeEmpty(data)
+                        case 'mustBeNonzeroNorm', Tools.mustBeNonzeroNorm(data)
+                        case 'mustBeSE3', Tools.mustBeSE3(data)
+                        case 'mustBeUnique', Tools.mustBeUnique(data)
+                        case 'mustHaveField', Tools.mustHaveField(data, params{k})
+                        case 'mustHaveSize', Tools.mustHaveSize(data, params{k})
+                        % case '',
+        
+                        otherwise
+                            fprintf('%s: not inside the implemented checks\n', checks{k});
+                            done = false;
+                    end
+                    if done && strcmp(andOr, 'or'), return, end
+                catch
+                    % Error description
+                    if ~isempty(params{k})
+                        stringTmp = [checks{k}, '(..., ', Tools.convertToString(params{k}), '), '];
+                    else, stringTmp = [checks{k}, ', '];
+                    end
+                    errorReport(end + (1:length(stringTmp))) = stringTmp;
+                end
+            end
+            
+            if strcmp(andOr, 'and') && isempty(errorReport), return, end
+            if strcmp(andOr, 'and'), andOr = '''and'' yet'; else, andOr = '''or'''; end
+            throw(MException('Tools:failCheck', ['Validation not passed.' ...
+                '\nValidation %s to pass %s'], andOr, errorReport(1:end-2)));            
+        end
+
+        % ------------------------- %
+
+        function mustBeAxis(data)
+            % mustBeAxis - Validate that data represents axis
+            %
+            % Syntax
+            %   mustBeAxis(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %
+            % See also Tools.isAxis
+        
+            if Tools.isAxis(data)
+                throw(MException('Tools:notAxis', ['Data must be member of ' ...
+                    '{''x'', ''y'', ''z''} or non-zero norm vector double(3, 1)']))
+            end
+        end
+
+        % ------------------------- %
+
+        function mustBeEmpty(data)
+            % mustBeEmpty - Validate that data is empty
+            %
+            % Syntax
+            %   mustBeEmpty(data)
+            %
+            % Input:
+            %   data - Data to validate
+
+            if ~isempty(data)
+                throw(MException('Tools:notEmpty', 'Data must be empty'))
+            end
+        end
+
+        % ------------------------- %
+
+        function mustBeNonzeroNorm(data)
+            % mustBeNonzeroNorm - Validate that data has non zero norm
+            %
+            % Syntax
+            %   mustBeNonzeroNorm(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %       double(:, :)
+            %       Validation: mustBeNumeric, mustBeVector, mustBeReal, mustBeFinite
+            %
+            % See also mustBeNumeric, mustBeVector, mustBeReal, mustBeFinite
+        
+            arguments, data {mustBeNumeric, mustBeVector, mustBeReal, mustBeFinite}, end
+        
+            if norm(data) > 0, return, end
+            throw(MException('Tools:zeroNorm', 'Data must have non-zero norm'))
+        end
+
+        % ------------------------- %
+
+        function mustBeSE3(data)
+            % mustBeSE3 - Validate that data is an homogeneous matrix (SE(3))
+            %
+            % Syntax
+            %   mustBeSE3(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %       double(4, 4)
+            %       Validation: mustBeReal, mustBeFinite, mustBeNumeric, mustHaveSize(..., [4, 4])
+            %
+            % See also mustBeReal, mustBeFinite, mustBeNumeric, Tools.mustHaveSize
+
+            arguments, data {mustBeReal, mustBeFinite, mustBeNumeric, Tools.mustHaveSize(data, [4, 4])}, end
+            threshold = 1e-5;
+
+            R = data(1:3, 1:3);
+            if any(abs(data(4, :) - [0, 0, 0, 1]) > threshold, 'all') || ...
+                any(abs(R*(R.') - eye(3)) > threshold, 'all') || any(abs((R.')*R - eye(3)) > threshold, 'all') || ...
+                (abs(det(R) - 1) > threshold)
+                throw(MException('Tools:notSE3', 'Must belong to SE(3) group'))
+            end
+        end
+
+        % ------------------------- %
+
+        function mustBeUnique(data)
+            % mustBeUnique - Validate that data is composed only of unique data
+            %
+            % Syntax
+            %   mustBeUnique(data)
+            %
+            % Input:
+            %   data - Data to validate
+            %
+            % See also Tools.isUnique
+
+            if ~Tools.isUnique(data)
+                throw(MException('Tools:notUNique', 'Data must have unique data.\nData: %s%s', ...
+                    Tools.convertToString(data), ''))
+            end
+        end
+
+        % ------------------------- %
+
+        function mustHaveField(data, field)
+            % mustHaveField - Validate that data has the desired filed
+            %
+            % Syntax
+            %   mustHaveField(data, field)
+            %
+            % Input:
+            %   data - Data to validate
+            %       struct
+            %       Validation: mustBeA(..., 'struct')
+            %   field - Cell of char arry/string containing the fileds
+            %       cell(char array or string)
+            %       Validation: mustBeText
+            %
+            % See also mustBeA, mustBeText
+
+            arguments
+                data {mustBeA(data, 'struct'), mustBeNonempty}
+                field {mustBeText}
+            end
+
+            if isempty(field), return, end
+            if all(isfield(data, field)), return
+            else
+                throw(MException('Tools:missingFileds', 'Required fileds: %s\nActual fields: %s', ...
+                    Tools.convertToString(field), Tools.convertToString(fieldnames(data))))
+            end
+        end
+
+        % ------------------------- %
+
+        function mustHaveSize(data, dim)
+            % mustHaveSize - Validate that data has specific dimension
+            %
+            % Syntax
+            %   mustHaveSize(data, dim)
+            %   mustHaveSize(data, dim, text)
+            %
+            % Input:
+            %   data - Data to validate
+            %   dim - Dimension to check with
+            %       Integer(1, m)
+            %       Validation: mustBeInteger, mustBeVector, mustBePositive
+            %
+            % See also mustBeInteger, mustBeVector, mustBePositive
+        
+            arguments, data, dim {mustBeInteger, mustBeVector, mustBePositive}, end
+            
+            if size(dim, 1) ~= 1, dim = dim.'; end
+        
+            if isequal(size(data), dim), return
+            else
+                throw(MException('Tools:wrongSize', ['Data does not match the required dimension.' ...
+                    '\nActual dimension = %s, Desired = %s'], Tools.convertToString(size(data)), Tools.convertToString(dim)))
+            end
         end
 
         % ------------------------- %
@@ -321,11 +690,15 @@ classdef Tools
             % Input:
             %   A - Homogeneous matrix frame
             %       belong to SE(3) | double(4, 4)
+            %       Validation: mustBeSE3
             %   text - Frame's name
             %       default = '' | char array or string
+            %       Validation: mustBeTextScalar
             %   specifics - Quiver style
             %       default = '-' | char array
             %       See also matlab.graphics.chart.primitive.Quiver
+            %
+            % See also Tools.mustBeSE3, mustBeTextScalar
             
             arguments, A {Tools.mustBeSE3}, text {mustBeTextScalar} = '', end
             arguments (Repeating), specifics, end
@@ -360,11 +733,15 @@ classdef Tools
             % Input:
             %   tri - Triangulation object
             %       triangulation
+            %       Validation: mustBeA(..., 'triangulation')
             %   A - Homogeneous matrix frame
             %       belong to SE(3) | default = eye(4) | double(4, 4)
+            %       Validation: mustBeSE3
             %   specifics - Surface style
             %       default = {'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1}
             %       See also matlab.graphics.chart.primitive.Surface
+            %
+            % See also mustBeA, Tools.mustBeSE3
             
             arguments, tri {mustBeA(tri, 'triangulation')}, A {Tools.mustBeSE3} = eye(4), end
             arguments (Repeating), specifics, end
@@ -377,295 +754,10 @@ classdef Tools
                 tri = triangulation(tri.ConnectivityList, P(1:3, :).');
             end
 
-            hold on, trimesh(tri, specifics{:}); hold off
+            hold on, trimesh(tri, specifics{:});
             xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]'), axis equal, hold off
         end
-
-
-        % ------------------------- %
-
-        function mustOr(data, checks)
-            % mustOr - Validate if data is ... or ...
-            %
-            % Syntax
-            %   mustOr(data, check1, check2, ...)
-            %
-            % Input:
-            %   data - Data to check
-            %   check - Cell array containing name of the check and other params
-            %       e.g. {'mustBeMember', {'a', 'b', 'c'}} | {'mustBeNumeric'}
-
-            arguments, data, end
-            arguments (Repeating), checks {mustBeA(checks, {'cell', 'char', 'string'})}, end
-
-            if isempty(checks), return, end
-
-            errorReport = '';
-            for k = 1:length(checks)
-                try
-                    if ~isa(checks{k}, 'cell'), checks{k} = checks(k); end
-                    multiInput = false;
-                    switch checks{k}{1}
-                        % Numeric Value Attributes
-                        case 'mustBePositive', mustBePositive(data)
-                        case 'mustBeNonpositive', mustBeNonpositive(data)
-                        case 'mustBeNonnegative', mustBeNonnegative(data)
-                        case 'mustBeNegative', mustBeNegative(data)
-                        case 'mustBeFinite', mustBeFinite(data)
-                        case 'mustBeNonNan', mustBeNonNan(data)
-                        case 'mustBeNonzero', mustBeNonzero(data)
-                        case 'mustBeNonsparse', mustBeNonsparse(data)
-                        case 'mustBeSparse', mustBeSparse(data)
-                        case 'mustBeReal', mustBeReal(data)
-                        case 'mustBeInteger', mustBeInteger(data)
-                        case 'mustBeNonmissing', mustBeNonmissing(data)
-                        % mustHaveField - Validate that data has the desired filed
-                        % Comparison with Other Values
-                        case 'mustBeGreaterThan', multiInput = true; mustBeGreaterThan(data, checks{k}{2})
-                        case 'mustBeLessThan', multiInput = true; mustBeLessThan(data, checks{k}{2})
-                        case 'mustBeGreaterThanOrEqual', multiInput = true; mustBeGreaterThanOrEqual(data, checks{k}{2})
-                        case 'mustBeLessThanOrEqual', multiInput = true; mustBeLessThanOrEqual(data, checks{k}{2})
-                        
-                        % Data Types
-                        case 'mustBeA', multiInput = true; mustBeA(data, checks{k}{2})
-                        case 'mustBeNumeric', mustBeNumeric(data)
-                        case 'mustBeNumericOrLogical', mustBeNumericOrLogical(data)
-                        case 'mustBeFloat', mustBeFloat(data)
-                        case 'mustBeUnderlyingType', multiInput = true; mustBeUnderlyingType(data, checks{k}{2})
-
-                        % Size
-                        case 'mustBeNonempty', mustBeNonempty(data)
-                        case 'mustBeScalarOrEmpty', mustBeScalarOrEmpty(data)
-                        case 'mustBeVector', mustBeVector(data)
-
-                        % Membership and Range
-                        case 'mustBeMember', multiInput = true; mustBeMember(data, checks{k}{2}) 
-                        case 'mustBeInRange', multiInput = true; mustBeInRange(data, checks{k}{2}, checks{k}{3}, checks{k}{4}, checks{k}{5})
-                        
-                        % Text
-                        case 'mustBeFile', mustBeFile(data)
-                        case 'mustBeFolder', mustBeFolder(data)
-                        case 'mustBeNonzeroLengthText', mustBeNonzeroLengthText(data)
-                        case 'mustBeText', mustBeText(data) 
-                        case 'mustBeTextScalar', mustBeTextScalar(data)
-                        case 'mustBeValidVariableName', mustBeValidVariableName(data) 
-                        
-
-                        % Custom
-                        case 'mustBeAxis', Tools.mustBeAxis(data)
-                        case 'mustBeNonzeroNorm', Tools.mustBeNonzeroNorm(data)
-                        case 'mustBeSE3', Tools.mustBeSE3(data)
-                        case 'mustHaveSize', multiInput = true; Tools.mustHaveSize(data, checks{k}{2})
-                        case 'mustBeEmpty', Tools.mustBeEmpty(data)
-                        case 'mustHaveField', Tools.mustHaveField(data, checks{k}{2})    
-                        % case '',
-
-                        otherwise
-                            % Check feasibility of 
-                            try mustBeTextScalar(checks{k}{1})
-                                fprintf('%s: not inside the implemented checks\n', checks{k}{1});
-                            catch, throw(MException('Tools:NotParamCheck', ...
-                                'Required variable check not feasible. Pass char array or string as identifier'));
-                            end
-                    end
-                    return
-                catch
-                    % Error description
-                    if multiInput
-                        if isnumeric(checks{k}{2}), checks{k}{2} = ['[', num2str(checks{k}{2}), ']']; end
-                        checks{k}{2} = strcat(checks{k}{2}, ''', '); checks{k}{2} = strcat('''', checks{k}{2});
-                        if ~isa(checks{k}{2}, 'cell'), checks{k}{2} = checks{k}(2); end
-                        checks{k}{2} = strjoin(checks{k}{2}); checks{k}{2} = checks{k}{2}(1:end-1);
-                        stringTmp = [checks{k}{1}, '(..., {', checks{k}{2}, '}), '];
-                    else, stringTmp = [checks{k}{1}, ', '];
-                    end
-
-                    errorReport(end + (1:length(stringTmp))) = stringTmp;
-                end
-            end
-
-            throw(MException('Tools:MustOr', ['Validation not passed.' ...
-                '\nValidation to pass %s'], errorReport(1:end-2)));            
-        end
-
-        % ------------------------- %
-
-        function mustHaveField(data, field)
-            % mustHaveField - Validate that data has the desired filed
-            %
-            % Syntax
-            %   mustHaveField(data, field)
-            %
-            % Input:
-            %   data - Data to validate
-            %       struct
-            %   field - Cell of char arry/string containing the fileds
-            %       cell(char array or string)
-
-            arguments
-                data {mustBeA(data, 'struct')}
-                field {mustBeText}
-            end
-
-
-            if all(isfield(data, field)), return
-            else
-                str = strcat(field, ''', '); str = strcat('''', str);
-                str = strjoin(str); str = str(1:end-1);
-                str1 = fieldnames(data); str1 = strcat(str1, ''', '); str1 = strcat('''', str1);
-                str1 = strjoin(str1); str1 = str1(1:end-1);
-                throw(MException('Tools:WrongData', 'Required fileds: {%s}\nActual fields: {%s}', ...
-                    str, str1))
-            end
-        end
-
-        % ------------------------- %
-
-        function mustBeEmpty(data)
-            % mustBeEmpty - Validate that data is empty
-            %
-            % Syntax
-            %   mustBeEmpty(data)
-            %
-            % Input:
-            %   data - Data to validate
-
-            try
-                mustBeNonempty(data)
-                throw(MException('Tools:WrongData', 'Data must be empty'))
-            catch, return
-            end
-        end
-
-        % ------------------------- %
-
-        function mustHaveSize(data, dim, text)
-            % mustHaveSize - Validate that data has specific dimension
-            %
-            % Syntax
-            %   mustHaveSize(data, dim)
-            %
-            % Input:
-            %   data - Data to validate
-            %       double(n1, n2, ...) or char(n1, n2, ...)
-            %   dim - Dimension to check with
-            %       Integer(1, m)
-
-            arguments, data, dim {mustBeInteger, mustBeVector}, text {mustBeTextScalar} = '', end
-            
-            if size(dim, 1) ~= 1, dim = dim.'; end
-
-            if isequal(size(data), dim), return
-            else
-                if isempty(text), text = '''data'''; else, text = ['', text, '']; end
-                throw(MException('Tools:WrongDim', [text, ' does not match the required dimension.' ...
-                    '\nActual dimension = [%s], Desired = [%s]'], num2str(size(data)), num2str(dim)))
-            end
-        end
-
-        % ------------------------- %
-
-        function mustBeNonzeroNorm(data)
-            % mustBeNonzeroNorm - Validate that data has non zero norm
-            %   Calls mustBeVector, mustBeReal
-            %
-            % Syntax
-            %   mustBeNonzeroNorm(data)
-            %
-            % Input:
-            %   data - Data to validate
-            %       double()
-
-            mustBeVector(data), mustBeReal(data)
-            if norm(data), return, end
-            throw(MException('Tools:ZeroNorm', 'Data must have non-zero norm'))
-        end
-
-        % ------------------------- %
-
-        function mustBeSE3(data)
-            % mustBeSE3 - Validate that data is an homogeneous matrix (SE(3))
-            %   Calls mustBeReal, mustBeNonNan, Tools.mustHaveSize(data, [4, 4])
-            %
-            % Syntax
-            %   mustBeSE3(data)
-            %
-            % Input:
-            %   data - Data to validate
-            %       double()
-
-            threshold = 1e-5;
-
-            mustBeReal(data), mustBeNonNan(data), Tools.mustHaveSize(data, [4, 4])
-            R = data(1:3, 1:3);
-            if any(abs(data(4, :) - [0, 0, 0, 1]) > threshold, 'all') || ...
-                any(abs(R*(R.') - eye(3)) > threshold, 'all') || any(abs((R.')*R - eye(3)) > threshold, 'all') || ...
-                (abs(det(R) - 1) > threshold)
-                throw(MException('Tools:WrongValue', 'Must belong to SE(3) group'))
-            end
-        end
-
-        % ------------------------- %
-
-        function mustBeAxis(data)
-            % mustBeAxis - Validate that data is axis
-            %   Calls Tools.isAxis
-            %
-            % Syntax
-            %   mustBeAxis(data)
-            %
-            % Input:
-            %   data - Data to validate
-            %       double()
-
-            if any(isnan(Tools.isAxis(data)))
-                throw(MException('Tools:WrongValue', ['Data must be member of ' ...
-                    '{''x'', ''y'', ''z''} or numeric triplet double(3, 1)']))
-            end
-        end
         
-        % ------------------------- %
-
-        function axis = isAxis(data)
-            % isAxis - Check if data is member of {'x', 'y', 'z'} group or
-            %   is a vector triplet and return the correspondednt normalized
-            %   vector
-            %   Calls {Tools.mustBeNonzeroNorm, mustBeNonNan, Tools.mustHaveSize(..., [3, 1])}
-            %       or {mustBeMember(..., {'x', 'y', 'z'})}
-            %       
-            % Syntax
-            %   axis = isAxis(data)
-            %
-            % Input:
-            %   data - Data to validate
-            %       double(3, 1) or {char array or string}
-            % Output:
-            %   axis - Nomralized corresponding axis (nan if fail some checks)
-            %       double(3, 1)
-            arguments (Output)
-                axis {Tools.mustHaveSize(axis, [3, 1])}
-            end
-
-            try
-                Tools.mustBeNonzeroNorm(data), mustBeNonNan(data)
-                Tools.mustHaveSize(data, [3, 1])
-                axis = data/norm(data);
-                return
-            catch
-                try
-                    mustBeMember(data, {'x', 'y', 'z'})
-                    switch data
-                        case 'x', axis = [1, 0, 0].';
-                        case 'y', axis = [0, 1, 0].';
-                        case 'z', axis = [0, 0, 1].';
-                    end
-                    return
-                catch
-                end
-            end
-            axis = nan(3, 1);
-        end
-
         % ------------------------- %
 
         function A = rotTra(data)
@@ -676,18 +768,20 @@ classdef Tools
             %   
             % Input:
             %   data - Roto-transaltion data
-            %       in SE(3) or Danavit-Hartenberg parms | double(4, 4) or double(1, 4)
+            %       in SE(3) or Danavit-Hartenberg parms | double(4, 4) or double(1, 4) or double(4, 1)
             %       Denavit-Hartenberg params: [d, theta, a, alpha]
+            %       Validation: mustBeFinite, mustBeSE3 OR mustHaveSize(..., [1, 4]) OR mustHaveSize(..., [4, 1])
             % Output:
             %   A - HOmogeneous matrix representing the roto-translation
             %       in SE(3) | double(4, 4)
 
             arguments (Input)
-                data {mustBeNonempty, mustBeFinite, Tools.mustOr(data, {'mustBeSE3'}, {'mustHaveSize', [1, 4]})}
+                data {mustBeFinite, Tools.mustAndOr('or', data, ...
+                    'mustBeSE3', [], 'mustHaveSize', [1, 4], 'mustHaveSize', [4, 1])}
             end
             arguments (Output), A {Tools.mustBeSE3}, end
             
-            if all(size(data) == [1, 4])
+            if all(size(data) == [1, 4]) || all(size(data) == [4, 1])
                 d = data(1); theta = data(2); a = data(3); alpha = data(4);
 
                 A = [cos(theta), -sin(theta)*cos(alpha), sin(theta)*sin(alpha),  a*cos(theta);
@@ -696,6 +790,31 @@ classdef Tools
                          0,                  0,                      0,                1];
             else, A = data;
             end
+        end
+
+        % ------------------------- %
+
+        function A = skew(w)
+            % skew - Convert a 3d vector in its skew symmetric matrix representation
+            %
+            % Syntax
+            %   A = skew(w)
+            %
+            % Input:
+            %   w - Vector
+            %       ...(3, 1) or ...(1, 3)
+            %   Validation: mustHaveSize(..., [3, 1]) OR mustHaveSize(..., [1, 3])
+            % Output:
+            %   A - Skew symmetric matrix
+            %       ...(3, 3)
+            %
+            % See also Tools.mustHaveSize, Tools.mustAndOr
+
+            arguments, w {Tools.mustAndOr('or', w, 'mustHaveSize', [3, 1], 'mustHaveSize', [1, 3])}, end
+            if size(w, 1) ~= 1, w = w.'; end
+            Tools.mustHaveSize(w, [1, 3])
+
+            A = [[0 -w(3), w(2)]; [w(3), 0, -w(1)]; [-w(2), w(1), 0]];
         end
     end
 end
