@@ -1,46 +1,40 @@
 classdef Link < handle_light
-    % LINK Robotic arm manipulator link class
+    % LINK Robotic arm manupulator link class
     %   Generate robotic arm link object
-    %   For completeness, it is possible to define masses and inertia
-    %   before (j2p) and after (c2j) the joint
     %
     % Link Properties:
-    %   name - Joint name
-    %   joint - Joint object associated with the link
-    %   mass - Link mass
-    %   CoM - Center of Mass position, expressed w.r.t. fixed joint frame
-    %   I - Inertia matrix expressed w.r.t. link's CoM
     %
-    % Joint Methods:
-    %   Link - Class constructor
-    %   toString - Plot in the command window object data
-    %   addVisual - Add visual geometries
-    %   copyRigidBody - Copy rigidBody in a Link object
-
+    % Link Methods:
+    %
 
     % ---------------- Properties ---------------------- %
 
     properties
-        % name - Joint name
+        % name - Link name
         %   char array or string
+        %   Validation: mustBeTextScalar, mustBeNonempty
         name {mustBeTextScalar, mustBeNonempty} = ' '
 
         % joint - Joint object associated with the link
         %   default = Joint('jnt') | Joint
+        %   Validation: mustBeNonempty, mustBeA(..., 'Joint')
         % See also Joint
-        joint {mustBeA(joint, 'Joint'), mustBeNonempty} = Joint('jnt')
+        joint {mustBeNonempty, mustBeA(joint, 'Joint')} = Joint('jnt')
 
         % mass - Link mass ([j2p_mass, c2j_mass])
-        %   kg (1x2) | default = zeros(2, 1) | duble(2, 1)
-        mass {mustBeReal, Tools.mustHaveSize(mass, [1, 2], 'mass')} = zeros(1, 2)
+        %   kg (1x2) | default = zeros(1, 2) | duble(1, 2)
+        %   Validation: mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(..., [1, 2])
+        mass {mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(mass, [1, 2])} = zeros(1, 2)
 
-        % CoM - Center of Mass position, expressed w.r.t. fixed joint frame ([j2p_CoM, c2j_CoM])
-        %   m (3x2) | default = zeros(2, 3) | double(2, 3)
-        CoM {mustBeReal, Tools.mustHaveSize(CoM, [3, 2], 'CoM')} = zeros(3, 2)
+        % CoM - Center of Mass position, expressed w.r.t. previous frame ([j2p_CoM, c2j_CoM])
+        %   m (3x2) | default = zeros(3, 2) | double(3, 2)
+        %   Validation: mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(..., [3, 2])
+        CoM {mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(CoM, [3, 2])} = zeros(3, 2)
 
         % I - Inertia matrix expressed w.r.t. link's CoM ([Ixx, Iyy, Izz, Iyz, Ixz, Ixy].')
         %   kg m^2 (6x2) | defualt = zeros(6, 2) | double(6, 2)
-        I {mustBeReal, Tools.mustHaveSize(I, [6, 2], 'Inertia')} = zeros(6, 2)
+        %   Validation: mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(..., [6, 2])
+        I {mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(I, [6, 2])} = zeros(6, 2)
     end
 
     % ------------------------- %
@@ -48,15 +42,18 @@ classdef Link < handle_light
     properties (SetAccess = {?Link, ?Arm})
         % Visual -Link's visual geometry associated to specific frame ([j2p, c2j])
         %   cell(1,2) {triangulation}
-        visual {mustBeA(visual, 'cell'), Tools.mustHaveSize(visual, [1, 2])} = cell(1, 2)
+        %   Validation: Tools.mustBeCellA(..., 'triangulation'), Tools.mustHaveSize(..., [1, 2])
+        visual {Tools.mustBeCellA(visual, 'triangulation'), Tools.mustHaveSize(visual, [1, 2])} = cell(1, 2)
 
         % parent - Index of link which the current link is attached to
         %   default = [] | double(1, 1)
+        %   Validation: mustBeInteger, mustBePositive, mustBeScalarOrEmpty
         parent {mustBeInteger, mustBePositive, mustBeScalarOrEmpty} = []
 
         % child - Index of link(s) attached to the current link
         %   default = [] | double(1, :)
-        child {mustBeVector, mustBePositive} = zeros(1, 0)
+        %   Validation: mustBeVector, mustBePositive, mustBeInteger
+        child {mustBeVector, mustBePositive, mustBeInteger} = zeros(1, 0)
     end
 
 
@@ -71,43 +68,58 @@ classdef Link < handle_light
             %   Link(name)
             %   Link(name, joint)
             %
+            %   Link(rigidBodyObj)
+            %
+            % Input:
+            %   rigidBodyObj - rigidBody object
+            %       rigidBody
+            %       Validation: mustBeA(..., 'rigidBody'), mustBeNonempty
+            %
             % See also name, joint, rigidBody
 
             arguments (Input)
-                name {mustBeNonempty, Tools.mustOr(name, {'mustBeTextScalar'}, {'mustBeA', 'rigidBody'})}
+                name {mustBeNonempty, Tools.mustAndOr('or', name, 'mustBeA', 'rigidBody', 'mustBeTextScalar', [])}
                 joint {mustBeA(joint, 'Joint')} = Joint('jnt')
             end
             arguments (Output), obj Link, end
 
             Tools.checkCasADi   % Check casadi folder
             if isa(name, 'rigidBody')
-                obj = Link.copyRigidBody(name);
-                return
+                obj = Link.copyRigidBody(name); return
             end
-            obj.name = name; obj.joint = joint;
+            
+            obj.name = name; obj.joint = joint;        
         end
 
         % ------------------------- %
 
-        function toString(obj)
+        function toString(obj, prefix)
             % toString - Plot in the command window object data
             %
             % Syntax
             %   toString
+            %   toString(prefix)
+            %
+            % Input;
+            %   prefix - Text before print
+            %       char array or string
+            %       Validation: mustBeTextScalar
 
-            fprintf([' ----- Link object ----- \n' ...
-                     '  Name: %s \n' ...
-                     '  Joint: \n'], obj.name)
-            obj.joint.toString('   |')
-            fprintf(['\b  Mass:\n' ...
-                     '   |  j2p: %s kg\n', ...
-                     '   |  c2j: %s kg\n', ...
-                     '  CoM:\n' ...
-                     '   |  j2p: [%s]^T m\n', ...
-                     '   |  c2j: [%s]^T m\n', ...
-                     '  Inertia [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]:\n' ...
-                     '   |  j2p: [%s]^T kg m^2\n', ...
-                     '   |  c2j: [%s]^T kg m^2\n', ...
+            arguments, obj Link, prefix {mustBeTextScalar} = '', end
+
+            fprintf([prefix, ' ----- Link object ----- \n' ...
+                     prefix, '  Name: %s \n' ...
+                     prefix, '  Joint: \n'], obj.name)
+            obj.joint.toString([prefix, '   |'])
+            fprintf([prefix, '\b  Mass:\n' ...
+                     prefix, '   |  j2p: %s kg\n', ...
+                     prefix, '   |  c2j: %s kg\n', ...
+                     prefix, '  CoM:\n' ...
+                     prefix, '   |  j2p: [%s]^T m\n', ...
+                     prefix, '   |  c2j: [%s]^T m\n', ...
+                     prefix, '  Inertia [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]:\n' ...
+                     prefix, '   |  j2p: [%s]^T kg m^2\n', ...
+                     prefix, '   |  c2j: [%s]^T kg m^2\n', ...
                      ' ------------------------- \n\n'], ...
                      num2str(obj.mass(:, 1)), num2str(obj.mass(:, 2)), ...
                      num2str(obj.CoM(:, 1).'), num2str(obj.CoM(:, 2).'), ...
@@ -129,8 +141,10 @@ classdef Link < handle_light
             % Input:
             %   type - Type of passed geometry
             %       in {'empty', 'box', 'cyl', 'pde', 'stl', 'tri'} | default = 'empty' | char array or string
-            %   frames - FRames to attach the visual to
-            %       in {'j2p', 'c2j', 'both'} | deafult = 'j2p' | char array or string
+            %       Validation: mustBeTextScalar, mustBeMember(..., {'empty', 'box', 'cyl', 'pde', 'stl', 'tri'})
+            %   frames - Frames to attach the visual to
+            %       in {'c2j', 'j2p', 'both'} | deafult = 'c2j' | char array or string
+            %       Validation: mustBeTextScalar, mustBeMember(..., {'c2j', 'j2p', 'both'})
             %   data - Visual data to pass for each 'type' of object
             %       empty -> no visual
             %       box   -> [l_x, l_y, l_z]
@@ -138,14 +152,18 @@ classdef Link < handle_light
             %       pde   -> pde.DiscreteGeometry object
             %       stl   -> STL file name
             %       tri   -> triangulation
+            %       Validation: mustBeA(..., {'triangulation', 'pde.DiscreteGeometry') OR ...
+            %           mustBeFile OR (mustBeVector AND mustBeNumeric AND mustBeFinite)
             %   tform - Roto-translation homogeneous matrix w.r.t 'frame' frame
             %       blong to SE(3) | default = eye(4) | double(4, 4)
+            %       Validation: Tools.mustBeSE3
             
             arguments, obj Link
-                type {mustBeMember(type, {'empty', 'box', 'cyl', 'pde', 'stl', 'tri'})} = 'empty'
-                frames {mustBeMember(frames, {'j2p', 'c2j', 'both'})} = 'j2p'
-                data {Tools.mustOr(data, {'mustBeA', {'triangulation', 'pde.DiscreteGeometry'}}, ...
-                    'mustBeFile', 'mustBeVector')} = zeros(1, 0)
+                type {mustBeTextScalar, mustBeMember(type, {'empty', 'box', 'cyl', 'pde', 'stl', 'tri'})} = 'empty'
+                frames {mustBeTextScalar, mustBeMember(frames, {'c2j', 'j2p', 'both'})} = 'c2j'
+                data {Tools.mustAndOr('or', data, 'mustBeA', {'triangulation', 'pde.DiscreteGeometry'}, ...
+                    'mustAndOr', {'and', 'mustBeVector', [], 'mustBeNumeric', [], 'mustBeFinite', []}, ...
+                    'mustBeFile', [])} = zeros(1, 0)
                 tform {Tools.mustBeSE3} = eye(4)
             end
 
@@ -155,21 +173,23 @@ classdef Link < handle_light
             end
 
             % Empty obj
-            if strcmp(type, 'empty'), obj.visual{frames} = cell(length(frames), 1); return, end
+            if strcmp(type, 'empty'), obj.visual(frames) = cell(length(frames), 1); return, end
 
             % Compute visual
             for k = frames
                 switch type
                     case 'box', mustBeReal(data),
-                        if numel(data) < 3
-                            warning('Wrong dimension for cyl visual element.\nPassed: [%s]\nDesired: [%s]', num2str(size(data)), num2str([2, 1]))
-                            data = data(1)*ones(3, 1);
+                        if numel(data) ~= 3
+                            warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s, Used: %s', ...
+                                Tools.convertToString(size(data)), Tools.convertToStringnum2str([2, 1]), Tools.convertToString(data(1)*ones(1, 3)))
+                            data = data(1)*ones(1, 3);
                         end
                         model = multicuboid(data(1), data(2), data(3));
                     case 'cyl', mustBeReal(data)
-                        if numel(data) < 2
-                            warning('Wrong dimension for cyl visual element.\nPassed: [%s]\nDesired: [%s]', num2str(size(data)), num2str([2, 1]))
-                            data = data(1)*ones(2, 1);
+                        if numel(data) ~= 2
+                            warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s, Used: %s', ...
+                                Tools.convertToString(size(data)), Tools.convertToString([2, 1]), Tools.convertToString(data(1)*ones(1, 2)))
+                            data = data(1)*ones(1, 2);
                         end
                         model = multicylinder(data(1), data(2));
                     case 'pde', mustBeA(data, 'pde.DiscreteGeometry')
@@ -192,7 +212,7 @@ classdef Link < handle_light
         end
 
         % ------------------------- %
-        
+
         function cmpDynParam(obj, params)
             % cmpDynParam - Compute dynamics parameters (CoM and I) using
             %   visual information
@@ -211,6 +231,7 @@ classdef Link < handle_light
             %           defualt = max(1.1*# of vertices, 100) | double(1, 1)
             %       cost - Cost function to optimize during the particle positioning
             %           deafult = @(x, swarm) min(sum((swarm - x).^2, 2)) | function_handle
+            %       Validation: mustBeA(..., 'struct')
             
             arguments
                 obj Link
@@ -232,7 +253,7 @@ classdef Link < handle_light
             end
         end
 
-        % ------------------------- %
+        % ------------------------- % MISSING PIECES -------------------------------------------------------------------------------------------------
 
         function plot(obj, jointValue, specifics)
             % plot - Plot Link object, namely Joint and visual
@@ -310,16 +331,20 @@ classdef Link < handle_light
             % Input:
             %   rigidBodyObj - rigidBody object
             %       rigidBody
+            %       Vaidation: mustBeNonempty, mustBeA(..., 'rigidBody')
             %   frame - Body connected to which frame
-            %       in {'c2j', 'j2p'} | default = 'c2j' | char array or string
-            %       [mass and inertia w.r.t. the joint: 'c2j' -> after, 'j2p' -> before]
+            %       in {'j2p', 'c2j'} | default = 'c2j' | char array or string
+            %       mass and inertia w.r.t. the frame:
+            %           - 'c2j' => joint
+            %           - 'j2p' => parent (prev. joint child)
+            %       Vaidation: mustBeTextScalar, mustBeMember(..., {'j2p', 'c2j'})
             % Output:
             %   linkObj - Link object
             %       Link
 
             arguments (Input)
-                rigidBodyObj {mustBeA(rigidBodyObj, 'rigidBody')}
-                frame {mustBeMember(frame, {'c2j', 'j2p'})} = 'c2j'
+                rigidBodyObj {mustBeNonempty, mustBeA(rigidBodyObj, 'rigidBody')}
+                frame {mustBeTextScalar, mustBeMember(frame, {'j2p', 'c2j'})} = 'c2j'
             end
             arguments (Output), linkObj Link, end
             
@@ -336,7 +361,7 @@ classdef Link < handle_light
             linkObj.CoM(:, index) = rigidBodyObj.CenterOfMass;
             linkObj.I(:, index) = rigidBodyObj.Inertia;
 
-            % ------------------------------------------------------------- TO DO: Add visual
+            % ---------------------------------------------------------------------------------------------------- TO DO: Add visual
         end
     end
 end

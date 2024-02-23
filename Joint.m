@@ -2,7 +2,6 @@ classdef Joint < handle_light
     % JOINT Robotic arm manupulator joint class
     %   Generate robotic arm joint object
     %
-    %
     % Joint Properties:
     %   name - Joint name
     %   type - Joint type
@@ -14,15 +13,19 @@ classdef Joint < handle_light
     %   A - Homogeneous matrix representing the (moved) joint
     %
     % Joint Methods:
-    %
-    %
+    %   Joint - Class constructor
+    %   setFixedTR - Set fixed transformation between joint's frames
+    %   toString - Plot in the command window object data
+    %   plot - Plot Joint object
+    %   copyRigidBodyJoint - Copy rigidBodyJoint in a Joint object
+
 
     % ---------------- Properties ---------------------- %
 
     properties
         % name - Joint name
         %   char array or string
-        %   Validation mustBeTextScalar, mustBeNonempty
+        %   Validation: mustBeTextScalar, mustBeNonempty
         name {mustBeTextScalar, mustBeNonempty} = ' '
 
         % type - Joint type
@@ -37,7 +40,7 @@ classdef Joint < handle_light
 
         % homePosition - Joint home position
         %   rad or m | default = 0 | double(1, 1)
-        %   Validation:mustBeNonNan, mustBeReal, mustBeNumeric, Tools.mustHaveSize(..., [2, 1]) 
+        %   Validation: mustBeNonNan, mustBeReal, mustBeNumeric, Tools.mustHaveSize(..., [2, 1]) 
         homePosition {mustBeNonNan, mustBeReal, mustBeNumeric, Tools.mustHaveSize(homePosition, [1, 1])} = 0
 
         % jointAxis - Axis of rotation/translation of the joint
@@ -81,6 +84,7 @@ classdef Joint < handle_light
         Ab {Tools.mustHaveSize(Ab, [4, 4]), ...
             Tools.mustAndOr('or', Ab, 'mustBeA', 'casadi.MX', 'mustBeSE3', [])} = eye(4)
     end
+
 
     % ----------------- Functions ---------------------- %
 
@@ -173,6 +177,7 @@ classdef Joint < handle_light
             % Input;
             %   prefix - Text before print
             %       char array or string
+            %       Validation: mustBeTextScalar
 
             arguments, obj Joint, prefix {mustBeTextScalar} = '', end
 
@@ -207,12 +212,14 @@ classdef Joint < handle_light
             % Input:
             %   jointValue - Joint value
             %       rad or m | default = homePosition | empty or double(1, 1)
+            %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty
             %   specifics - Frame(s) to show
             %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
+            %       Validation: mustBeMember(..., {'parent', 'joint', 'child', 'all'})
             
             arguments
                 obj Joint,
-                jointValue {mustBeNonNan, mustBeReal, mustBeNumeric, mustBeScalarOrEmpty} = obj.homePosition
+                jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty} = obj.homePosition
             end
             arguments (Repeating), specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})}, end
 
@@ -238,6 +245,7 @@ classdef Joint < handle_light
         end
     end
 
+
     % ---------------- Get/set fun. -------------------- %
 
     methods
@@ -245,6 +253,7 @@ classdef Joint < handle_light
             % Input:
             %   axis - Axis of rotation/transaltion
             %       in {'x', 'y', 'z'} or double(3, 1)
+            %       Validation: Tools.mustBeAxis
             
             arguments, obj Joint, axis {Tools.mustBeAxis}, end
             obj.jointAxis = Tools.isAxis(axis);
@@ -273,6 +282,7 @@ classdef Joint < handle_light
             A = Function('A', {x}, {obj.Ab*obj.j2p*Aj});
         end
     end
+
 
     % ------------------- Static ----------------------- %
 

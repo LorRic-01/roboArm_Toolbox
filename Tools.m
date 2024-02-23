@@ -99,6 +99,7 @@ classdef Tools
         function [CoM, I, swarm, tri] = cmpDynParams(tri, swarm, params)
             % cmpDynParams - Compute dynamics parameters (CoM and inertia w.r.t CoM)
             %   from triangulation throught max optimization
+            %   ---------------------------------------------------------------------------------------------------- TO ADJUST
             %
             % Syntax
             %   [CoM, I, tri] = cmpDynParams(tri)
@@ -112,6 +113,7 @@ classdef Tools
             %   swarm - Problem solution
             %           Used to continue the iteratie convergence of the algorithm
             %       double(:, 3)
+            %       Validation: mustBeReal, mustBeFinite, mustBeNonNan
             %   params - Struct with the following parameters
             %       verbose - Print Command Window info and plots
             %           default = false | logical
@@ -121,6 +123,7 @@ classdef Tools
             %           defualt = max(1.1*# of vertices, 100) | double(1, 1)
             %       cost - Cost function to optimize during the particle positioning
             %           deafult = @(x, swarm) min(sum((swarm - x).^2, 2)) | function_handle
+            %       Validation: mustBeA(..., 'struct')
             % Output:
             %   CoM - Center of Mass
             %       m (3x1) | double(3, 1)
@@ -358,7 +361,7 @@ classdef Tools
             % Input:
             %   data - Data to validate
             %       double(3, 1) or {char array or string}
-            %       Validation (mustBeNonzeroNorm AND mustHaveSize(..., [3,1])) OR ...
+            %       Validation (mustBeNonzeroNorm AND mustHaveSize(..., [3, 1])) OR ...
             %           (mustBeTextScalar AND mustBeMember(..., {'x', 'y', 'z'}))
             % Output:
             %   axis - Normalized axis
@@ -412,7 +415,7 @@ classdef Tools
         % ------------------------- %
 
         function mustAndOr(andOr, data, checks, params)
-            % mustAndOr - Validate if data is ... {and, or} ...
+            % mustAndOr - Validate that data is ... {and, or} ...
             %
             % Syntax
             %   mustAndOr(andOr, data, check1, param1, check2, param2, ...)
@@ -484,7 +487,6 @@ classdef Tools
                         case 'mustBeTextScalar', mustBeTextScalar(data)
                         case 'mustBeValidVariableName', mustBeValidVariableName(data) 
                         
-        
                         % Custom
                         case 'mustAndOr',Tools.mustAndOr(params{k}{1}, data, params{k}{2:end})
                         case 'mustBeAxis', Tools.mustBeAxis(data)
@@ -494,10 +496,11 @@ classdef Tools
                         case 'mustBeUnique', Tools.mustBeUnique(data)
                         case 'mustHaveField', Tools.mustHaveField(data, params{k})
                         case 'mustHaveSize', Tools.mustHaveSize(data, params{k})
+                        case 'mustBeCellA', Tools.mustBeCellA(data, params{k})
                         % case '',
         
                         otherwise
-                            fprintf('%s: not inside the implemented checks\n', checks{k});
+                            warning('%s: not inside the implemented checks\n', checks{k});
                             done = false;
                     end
                     if done && strcmp(andOr, 'or'), return, end
@@ -534,6 +537,36 @@ classdef Tools
                 throw(MException('Tools:notAxis', ['Data must be member of ' ...
                     '{''x'', ''y'', ''z''} or non-zero norm vector double(3, 1)']))
             end
+        end
+
+        % ------------------------- %
+
+        function mustBeCellA(data, type)
+            % mustBeCellA - Validate that data is a cell array of all the
+            %   same type or empty
+            %
+            % Syntax
+            %   mustBeCellA(data, type)
+            %
+            % Input
+            %   data - Data to check
+            %       cell
+            %       Validation: mustBeA(..., 'cell')
+            %   type - Type to check with
+            %       char array or string
+            %       Validation: mustBeTextScalar
+
+            arguments, data {mustBeA(data, 'cell')}, type {mustBeTextScalar}, end
+
+            if isempty(data), return, end
+            try
+                for k = 1:numel(data)
+                    if isempty(data{k}), continue, end
+                    mustBeA(data{k}, type)
+                end
+            catch, throw(MException('Tools:wrongType', 'All data must be of type %s', type))
+            end
+            
         end
 
         % ------------------------- %
@@ -656,7 +689,6 @@ classdef Tools
             %
             % Syntax
             %   mustHaveSize(data, dim)
-            %   mustHaveSize(data, dim, text)
             %
             % Input:
             %   data - Data to validate
