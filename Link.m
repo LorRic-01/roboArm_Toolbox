@@ -3,9 +3,23 @@ classdef Link < handle_light
     %   Generate robotic arm link object
     %
     % Link Properties:
+    %   name - Link name
+    %   joint - Joint object associated with the link
+    %   mass - Link mass ([j2p_mass, c2j_mass])
+    %   CoM - Center of Mass position w.r.t.
+    %   I - Inertia matrix expressed w.r.t. corresponding frame
+    %   Visual - Link's visual geometry associated to specific frame ([j2p, c2j])
+    %   parent - Index of link which the current link is attached to
+    %   child - Index of link(s) attached to the current link
     %
     % Link Methods:
-    %
+    %   Link - Class constructor
+    %   toString - Plot in the command window object data
+    %   addVisual - Add visual geometries
+    %   cmpDynParam - Compute dyn. param. (CoM and I) using visual
+    %   plot - Plot Link object, namely Joint and visual
+    %   copyRigidBody - Copy rigidBody in a Link object                     [Static]
+
 
     % ---------------- Properties ---------------------- %
 
@@ -31,7 +45,7 @@ classdef Link < handle_light
         %   Validation: mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(..., [3, 2])
         CoM {mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(CoM, [3, 2])} = zeros(3, 2)
 
-        % I - Inertia matrix expressed w.r.t. link's CoM ([Ixx, Iyy, Izz, Iyz, Ixz, Ixy].')
+        % I - Inertia matrix expressed w.r.t. previous frame ([Ixx, Iyy, Izz, Iyz, Ixz, Ixy].'_{j2p, c2j})
         %   kg m^2 (6x2) | defualt = zeros(6, 2) | double(6, 2)
         %   Validation: mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(..., [6, 2])
         I {mustBeNumeric, mustBeFinite, mustBeReal, Tools.mustHaveSize(I, [6, 2])} = zeros(6, 2)
@@ -40,7 +54,7 @@ classdef Link < handle_light
     % ------------------------- %
 
     properties (SetAccess = {?Link, ?Arm})
-        % Visual -Link's visual geometry associated to specific frame ([j2p, c2j])
+        % Visual - Link's visual geometry associated to specific frame ([j2p, c2j])
         %   cell(1,2) {triangulation}
         %   Validation: Tools.mustBeCellA(..., 'triangulation'), Tools.mustHaveSize(..., [1, 2])
         visual {Tools.mustBeCellA(visual, 'triangulation'), Tools.mustHaveSize(visual, [1, 2])} = cell(1, 2)
@@ -93,37 +107,57 @@ classdef Link < handle_light
 
         % ------------------------- %
 
-        function toString(obj, prefix)
+        function toString(obj, prefix, reduced)
             % toString - Plot in the command window object data
             %
             % Syntax
             %   toString
             %   toString(prefix)
+            %   toString(prefix, reduced)
             %
             % Input;
             %   prefix - Text before print
-            %       char array or string
+            %       default = '' | char array or string
             %       Validation: mustBeTextScalar
+            %   reduced - Compact text
+            %       defualt = false | logical
+            %       Validation: Tools.mustBeLogical, Tools.mustHaveSize(..., [1, 1]) 
 
-            arguments, obj Link, prefix {mustBeTextScalar} = '', end
+            arguments, obj Link, prefix {mustBeTextScalar} = ''
+                reduced {Tools.mustBeLogical, Tools.mustHaveSize(reduced, [1, 1])} = false
+            end
 
-            fprintf([prefix, ' ----- Link object ----- \n' ...
-                     prefix, '  Name: %s \n' ...
-                     prefix, '  Joint: \n'], obj.name)
-            obj.joint.toString([prefix, '   |'])
-            fprintf([prefix, '\b  Mass:\n' ...
-                     prefix, '   |  j2p: %s kg\n', ...
-                     prefix, '   |  c2j: %s kg\n', ...
-                     prefix, '  CoM:\n' ...
-                     prefix, '   |  j2p: [%s]^T m\n', ...
-                     prefix, '   |  c2j: [%s]^T m\n', ...
-                     prefix, '  Inertia [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]:\n' ...
-                     prefix, '   |  j2p: [%s]^T kg m^2\n', ...
-                     prefix, '   |  c2j: [%s]^T kg m^2\n', ...
-                     ' ------------------------- \n\n'], ...
-                     num2str(obj.mass(:, 1)), num2str(obj.mass(:, 2)), ...
-                     num2str(obj.CoM(:, 1).'), num2str(obj.CoM(:, 2).'), ...
-                     num2str(obj.I(:, 1).'), num2str(obj.I(:, 2).'))
+
+            if reduced
+                fprintf([prefix, '  Link | Name: %s\n' ...
+                         prefix, '       | Arm connection: Parent: %s, Child: %s \n'], ...
+                    Tools.convertToString(obj.name), ...
+                    Tools.convertToString(obj.parent), Tools.convertToString(obj.child))
+                obj.joint.toString([prefix, '       | '], reduced)
+            else
+                fprintf([prefix, ' ----- Link object ----- \n' ...
+                    prefix, '  Name: %s \n'], Tools.convertToString(obj.name))
+                if ~isempty(obj.parent) || ~isempty(obj.child)
+                    fprintf([prefix, '  Arm connection indeces:\n' ...
+                             prefix, '   |  Parent: %s, Child: %s \n'], ...
+                             Tools.convertToString(obj.parent), Tools.convertToString(obj.child))
+                    fprintf([prefix, '  Joint: \n'])
+                end
+                obj.joint.toString([prefix, '   |'], reduced)
+                fprintf(['\b', prefix, '  Mass:\n' ...
+                         prefix, '   |  j2p: %s kg\n', ...
+                         prefix, '   |  c2j: %s kg\n', ...
+                         prefix, '  CoM:\n' ...
+                         prefix, '   |  j2p: %s m\n', ...
+                         prefix, '   |  c2j: %s m\n', ...
+                         prefix, '  Inertia [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]:\n' ...
+                         prefix, '   |  j2p: %s kg m^2\n', ...
+                         prefix, '   |  c2j: %s kg m^2\n'], ...
+                         Tools.convertToString(obj.mass(:, 1)), Tools.convertToString(obj.mass(:, 2)), ...
+                         Tools.convertToString(obj.CoM(:, 1)), Tools.convertToString(obj.CoM(:, 2)), ...
+                         Tools.convertToString(obj.I(:, 1)), Tools.convertToString(obj.I(:, 2)))
+                fprintf([prefix, ' ------------------------- \n\n'])
+            end
         end
 
         % ------------------------- %
@@ -180,14 +214,14 @@ classdef Link < handle_light
                 switch type
                     case 'box', mustBeReal(data),
                         if numel(data) ~= 3
-                            warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s, Used: %s', ...
-                                Tools.convertToString(size(data)), Tools.convertToStringnum2str([2, 1]), Tools.convertToString(data(1)*ones(1, 3)))
+                            warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s\tValue used: %s', ...
+                                Tools.convertToString(size(data)), Tools.convertToStringnum2str([3, 1]), Tools.convertToString(data(1)*ones(1, 3)))
                             data = data(1)*ones(1, 3);
                         end
                         model = multicuboid(data(1), data(2), data(3));
                     case 'cyl', mustBeReal(data)
                         if numel(data) ~= 2
-                            warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s, Used: %s', ...
+                            warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s\tValue used: %s', ...
                                 Tools.convertToString(size(data)), Tools.convertToString([2, 1]), Tools.convertToString(data(1)*ones(1, 2)))
                             data = data(1)*ones(1, 2);
                         end
@@ -214,8 +248,7 @@ classdef Link < handle_light
         % ------------------------- %
 
         function cmpDynParam(obj, params)
-            % cmpDynParam - Compute dynamics parameters (CoM and I) using
-            %   visual information
+            % cmpDynParam - Compute dynamics parameters (CoM and I) using visual information
             %
             % Syntax
             %   cmpDynParam
@@ -253,9 +286,9 @@ classdef Link < handle_light
             end
         end
 
-        % ------------------------- % MISSING PIECES -------------------------------------------------------------------------------------------------
+        % ------------------------- %
 
-        function plot(obj, jointValue, specifics)
+        function plot(obj, jointValue, frameSpec, surfSpec)
             % plot - Plot Link object, namely Joint and visual
             % Frame legend:
             %   - dotted line: parent joint frame ('parent')
@@ -264,38 +297,43 @@ classdef Link < handle_light
             %
             % Syntax
             %   plot(jointValue)
-            %   plot(jointValue, specific_1, specific_2, ...)
+            %   plot(jointValue, frameSpec)
+            %   plot(jointValue, frameSpec, surfSpec_1, surfSpec_2, ...)
             %
             % Input:
             %   jointValue - Joint value
             %       rad or m | default = homePosition | empty or double(1, 1)
-            %   specifics - Frame(s) to show
+            %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty
+            %   frameSpec - Frame(s) to show
             %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
+            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all'})
+            %   surfSpec - Surface style
+            %       default = {'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1}
+            %       See also matlab.graphics.chart.primitive.Surface
             
             arguments
                 obj Link,
-                jointValue {mustBeReal, mustBeScalarOrEmpty} = obj.joint.homePosition
+                jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty} = obj.joint.homePosition
+                frameSpec {mustBeMember(frameSpec, {'parent', 'joint', 'child', 'all'})} = 'joint'
             end
-            arguments (Repeating), specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})}, end
-
-            if isempty(jointValue), jointValue = obj.joint.homePosition; end
-            if isempty(specifics), specifics = {'joint'}; end
+            arguments (Repeating), surfSpec, end
 
             % Plot joint
-            obj.joint.plot(jointValue, specifics{:})
+            obj.joint.plot(jointValue, frameSpec)
             if isa(obj.joint.Ab, 'casadi.MX'), return, end
 
-            if any(ismember(specifics, 'all')), specifics = {'parent', 'joint', 'child'}; end
-            specifics = unique(specifics);
+            if any(ismember(frameSpec, 'all')), frameSpec = {'parent', 'joint', 'child'}; end
+            if ~iscell(frameSpec), frameSpec  = {frameSpec}; end
+            frameSpec = unique(frameSpec);
 
             A_fun = obj.joint.A; A_val = full(A_fun(jointValue));
-            for k = 1:length(specifics)
-                if strcmp(specifics{k}, 'child')
+            for k = 1:length(frameSpec)
+                if strcmp(frameSpec{k}, 'child')
                     if isempty(obj.visual{2}), continue, end
-                    Tools.plotTri(obj.visual{2}, A_val, 'FaceColor', [0.8500 0.3250 0.0980], 'EdgeColor', [0.8500 0.3250 0.0980], 'FaceAlpha', 0.1)
+                    Tools.plotTri(obj.visual{2}, A_val, surfSpec{:})
                 else
                     if isempty(obj.visual{1}), continue, end
-                    Tools.plotTri(obj.visual{1}, obj.joint.Ab, 'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1)
+                    Tools.plotTri(obj.visual{1}, obj.joint.Ab, surfSpec{:})
                 end
             end
         end
@@ -311,7 +349,10 @@ classdef Link < handle_light
             %   inertia - Inertia matrix [Ixx, Iyy, Izz, Iyz, Ixz, Ixy]
             %       double(6, 2)
 
-            arguments, obj Link, inertia {mustBeReal}, end
+            arguments, obj Link
+                inertia {mustBeNumeric, mustBeFinite, mustBeReal, ...
+                    Tools.mustAndOr('or', inertia, 'mustHaveSize', [6, 1], 'mustHaveSize', [6, 2])}
+            end
 
             for k = 1:size(inertia, 2), Tools.inertiaConv(inertia(:, k)); end
             obj.I = inertia;

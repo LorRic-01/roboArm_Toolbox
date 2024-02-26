@@ -17,7 +17,7 @@ classdef Joint < handle_light
     %   setFixedTR - Set fixed transformation between joint's frames
     %   toString - Plot in the command window object data
     %   plot - Plot Joint object
-    %   copyRigidBodyJoint - Copy rigidBodyJoint in a Joint object
+    %   copyRigidBodyJoint - Copy rigidBodyJoint in a Joint object          [Static]
 
 
     % ---------------- Properties ---------------------- %
@@ -167,33 +167,47 @@ classdef Joint < handle_light
 
         % ------------------------- %
 
-        function toString(obj, prefix)
+        function toString(obj, prefix, reduced)
             % toString - Plot in the command window object data
             %
             % Syntax
             %   toString
             %   toString(prefix)
+            %   toString(prefix, reduced)
             %
             % Input;
             %   prefix - Text before print
-            %       char array or string
+            %       default = '' | char array or string
             %       Validation: mustBeTextScalar
+            %   reduced - Compact text
+            %       defualt = false | logical
+            %       Validation: Tools.mustBeLogical, Tools.mustHaveSize(..., [1, 1]) 
 
-            arguments, obj Joint, prefix {mustBeTextScalar} = '', end
+            arguments, obj Joint, prefix {mustBeTextScalar} = ''
+                reduced {Tools.mustBeLogical, Tools.mustHaveSize(reduced, [1, 1])} = false
+            end
 
-            fprintf([prefix, ' ----- Joint object ----- \n' ...
-                     prefix, '  Name:              %s \n' ...
-                     prefix, '  Type:              %s \n' ...
-                     prefix, '  Pos. lim [lb, ub]: [%s]\n' ...
-                     prefix, '  Home pos.:         %s\n' ...
-                     prefix, '  Axis:              [%s]^T\n' ...
-                     prefix, '  Joint-to-parent:   RPY: [%s] deg, T: [%s]^T m\n' ...
-                     prefix, '  Child-to-joint:    RPY: [%s] deg, T: [%s]^T m\n' ...
-                     prefix, ' ------------------------- \n\n'], ...
-                obj.name, obj.type, num2str(obj.positionLimits.'), ...
-                num2str(obj.homePosition), num2str(obj.jointAxis.'), ...
-                num2str(rotm2eul(obj.j2p(1:3, 1:3), 'XYZ')*180/pi), num2str(obj.j2p(1:3, 4).'), ...
-                num2str(rotm2eul(obj.c2j(1:3, 1:3), 'XYZ')*180/pi), num2str(obj.c2j(1:3, 4).'))
+
+            if reduced
+                fprintf([prefix, 'Joint | Name: %s\n' ...
+                         prefix, '      | Type: %s\n\n'], ...
+                    Tools.convertToString(obj.name), Tools.convertToString(obj.type))
+            else
+                fprintf([prefix, ' ----- Joint object ----- \n' ...
+                         prefix, '  Name:              %s \n' ...
+                         prefix, '  Type:              %s \n' ...
+                         prefix, '  Pos. lim [lb, ub]: %s\n' ...
+                         prefix, '  Home pos.:         %s\n' ...
+                         prefix, '  Axis:              %s\n' ...
+                         prefix, '  Joint-to-parent:   RPY: %s deg, T: %s m\n' ...
+                         prefix, '  Child-to-joint:    RPY: %s deg, T: %s m\n' ...
+                         prefix, ' ------------------------- \n\n'], ...
+                    Tools.convertToString(obj.name), Tools.convertToString(obj.type), ...
+                    Tools.convertToString(obj.positionLimits), ...
+                    Tools.convertToString(obj.homePosition), Tools.convertToString(obj.jointAxis), ...
+                    Tools.convertToString(rotm2eul(obj.j2p(1:3, 1:3), 'XYZ')*180/pi), Tools.convertToString(obj.j2p(1:3, 4)), ...
+                    Tools.convertToString(rotm2eul(obj.c2j(1:3, 1:3), 'XYZ')*180/pi), Tools.convertToString(obj.c2j(1:3, 4)))
+            end
         end
 
         % ------------------------- %
@@ -211,33 +225,40 @@ classdef Joint < handle_light
             %
             % Input:
             %   jointValue - Joint value
-            %       rad or m | default = homePosition | empty or double(1, 1)
-            %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty
+            %       rad or m | default = homePosition | empty or double(1, :)
+            %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector
             %   specifics - Frame(s) to show
             %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
-            %       Validation: mustBeMember(..., {'parent', 'joint', 'child', 'all'})
+            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all'})
             
             arguments
                 obj Joint,
-                jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty} = obj.homePosition
+                jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector} = obj.homePosition
+                specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})} = 'joint'
             end
-            arguments (Repeating), specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})}, end
 
             if isempty(jointValue), jointValue = obj.homePosition; end
             if isempty(specifics), specifics = {'joint'}; end
 
-            if isa(obj.Ab, 'casadi.MX'), warning(['Cannot plot the joint since ' ...
-                    'there is a further dependency on the joint base frame.\n' ...
-                    'Resort to plot of Arm class'], []), return
+            
+            if (isa(obj.A, 'casadi.MX') && (obj.A.numel_in ~= length(jointValue))) || ...
+                    isa(obj.Ab, 'casadi.MX') && (obj.Ab.numel_in ~= length(jointValue))
+                warning(['Cannot plot the joint since ' ...
+                    'there is a further dependency on other joints.\n' ...
+                    'Resort to plot of Arm class or check jointValue'], []), return
+            end
+            
+            A_fun = obj.A; A_val = full(A_fun(jointValue));
+            if isa(obj.Ab, 'casadi.MX'), Ab_val = full(obj.Ab(jointValue));
+            else, Ab_val = obj.Ab;
             end
 
-            A_fun = obj.A; A_val = full(A_fun(jointValue));
-
             if any(ismember(specifics, 'all')), specifics = {'parent', 'joint', 'child'}; end
+            if ~iscell(specifics), specifics = {specifics}; end
             specifics = unique(specifics);
-            for k = 1:numel(specifics)
-                switch specifics{k}
-                    case 'parent', Tools.plotFrames(obj.Ab, [obj.name, '_p'], ':');
+            for k = specifics
+                switch k{:}
+                    case 'parent', Tools.plotFrames(Ab_val, [obj.name, '_p'], ':');
                     case 'joint', Tools.plotFrames(A_val, [obj.name, '_m'], '-');
                     case 'child', Tools.plotFrames(A_val*obj.c2j, [obj.name, '_c'], '--');
                 end

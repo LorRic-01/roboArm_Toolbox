@@ -13,6 +13,7 @@ classdef Tools
     %   mustAndOr - Validate if data is ... {and, or} ...
     %   mustBeAxis - Validate that data represents axis
     %   mustBeEmpty - Validate that data is empty
+    %   mustBeLogical - Validate that data is logical
     %   mustBeNonzeroNorm - Validate that data has non zero norm
     %   mustBeSE3 - Validate that data is an homogeneous matrix (SE(3))
     %   mustBeUnique - Validate that data is composed only of unique data
@@ -497,6 +498,7 @@ classdef Tools
                         case 'mustHaveField', Tools.mustHaveField(data, params{k})
                         case 'mustHaveSize', Tools.mustHaveSize(data, params{k})
                         case 'mustBeCellA', Tools.mustBeCellA(data, params{k})
+                        case 'mustBeLogical', Tools.mustBeLogical(data)
                         % case '',
         
                         otherwise
@@ -582,6 +584,22 @@ classdef Tools
 
             if ~isempty(data)
                 throw(MException('Tools:notEmpty', 'Data must be empty'))
+            end
+        end
+
+        % ------------------------- %
+        
+        function mustBeLogical(data)
+            % mustBeLogical - Validate that data is logical
+            %
+            % Syntax
+            %   mustBeLogical(data)
+            %
+            % Input:
+            %   data - Data to validate
+
+            if ~islogical(data)
+                throw(MException('Tools.notLogical', 'Data must be logical'))
             end
         end
 

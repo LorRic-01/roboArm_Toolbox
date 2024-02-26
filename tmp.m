@@ -191,3 +191,15 @@ end
 %                 grid on, axis equal, axis padded, hold on, plot3(swarm(:, 1), swarm(:, 2), swarm(:, 3), '.', ...
 %                     'MarkerSize', 15, 'Color', [0 0.4470 0.7410])
 % plot3(CoM(1), CoM(2), CoM(3), '.r', 'MarkerSize', 15)
+
+%%
+import casadi.*
+j1 = Joint('j1', 'revolute');
+j2 = Joint('j2', 'revolute');
+
+x = MX.sym('x', 2, 1);
+A = j1.A(x(1)) + j2.A(x(2));
+A_fun = Function('A_fun', {x}, {A});
+
+dA = jacobian(A, x);
+dA_fun = Function('dA_fun', {x}, {dA});

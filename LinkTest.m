@@ -20,7 +20,7 @@ link.toString
 %% Add visual geometry
 link = Link('link4'); link.addVisual('empty')
 link = Link('link5'); link.addVisual('box', 'j2p', [1, 1, 1])
-link = Link('link6'); link.addVisual('cyl', 'j2p', [1, 1, 1], ...
+link = Link('link6'); link.addVisual('cyl', 'j2p', [1, 1], ...
     trvec2tform([0, 0, 0])*eul2tform(pi/180*[10 0 0], 'XYZ'));
 % link = Link('link'); link.addVisual('stl', 'j2p', 'EndEffector_merge_fixed.stl', eye(4))
 
@@ -44,5 +44,5 @@ link.addVisual('cyl', 'j2p', [1, 1], trvec2tform([0, 0, 0])*eul2tform(pi/180*[0 
 link.addVisual('box', 'c2j', [1, 1, 1], trvec2tform([0, 0, 0])*eul2tform(pi/180*[0 0 0], 'XYZ'));
 
 link.mass = [1, 1];
-link.cmpDynParam(struct('cycle', 1000, 'n_p', 1000, 'verbose', true)), link.toString
-figure(3), clf, grid on, axis equal, link.plot(0, 'all'), view(3)
+link.cmpDynParam(struct('cycle', 100, 'n_p', 1000, 'verbose', true)), link.toString
+figure(3), clf, grid on, axis equal, link.plot(0, {'child', 'joint'}), view(3)
