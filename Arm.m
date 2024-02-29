@@ -36,14 +36,11 @@ classdef Arm < handle_light
         %   default = empty | cell of char array or string
         %   Validation: mustBeText, Tools.mustBeUnique OR Tools.mustBeEmpty
         linksName {mustBeText, Tools.mustAndOr('or', linksName, 'mustBeUnique', [], 'mustBeEmpty', [])} = {}
-    end
 
-    % ------------------------- %
-
-    properties (SetAccess = {?Arm})
-        % casadiVars - casADi variables used in the robot descriptions
-        %   default = empty | casadi.MX
-        casadiVars {Tools.mustAndOr('or', casadiVars, 'mustBeA', 'casadi.MX', 'mustBeEmpty', [])} = []
+        % A_genFun - A joint's homogeneous matrix funtions (casADi) w.r.t. all controllable joints
+        %   defualt = empty | cell array(casadi.Function)
+        %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
+        A_genFun {Tools.mustAndOr('or', A_genFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')}
     end
 
 
@@ -66,15 +63,18 @@ classdef Arm < handle_light
             % See also name, bodies, Link
 
             arguments
-                name {mustBeNonempty, mustBeTextScalar}
+                name {mustBeNonempty, Tools.mustAndOr('or', name, 'mustBeA', 'rigidBodyTree', 'mustBeTextScalar', [])}
                 link {mustBeA(link, 'Link')} = Link.empty
             end
 
-            obj.name = name;
-            if isempty(link), return, end
+            Tools.checkCasADi   % Check casadi folder
+            
+            if isa(name, 'rigidBodyTree')
+                obj = Arm.copyRigidBodyTree(name); return
+            end
 
-            obj.links(1) = link;
-            obj.linksName{1} = link.name;
+            obj.name = name; if isempty(link), return, end
+            obj.links(1) = link; obj.linksName{1} = link.name;
         end
 
         % ------------------------- %
@@ -182,17 +182,107 @@ classdef Arm < handle_light
 
         % ------------------------- %
 
-        function plot(obj, jointValue, frameSpec, surfSpec)
-            % plot - Plot Link object, namely Joint and visual
+        function plot(obj, jointValue, frameSpec)
+            % plot - Plot Arm object, namely Link, Joint and visual
             % Frame legend:
             %   - dotted line: parent joint frame ('parent')
             %   - full line: (moved) joint frame ('joint')
             %   - dashed line: child(ren) frame ('child')
+            % Color legend:
+            %   - same colour = same Link object
+            %
+            % Syntax
+            %   plot(jointValue)
+            %   plot(jointValue, frameSpec)
+            %
+            % Input:
+            %   jointValue - Joint value
+            %       rad or m | default = links.joint.homePosition | empty or double(1, 1)
+            %       Validation: (mustBeReal AND mustBeNumeric AND mustBeFinite AND mustBeVector) OR Tools.mustBeEmpty
+            %   frameSpec - Frame(s) to show
+            %       in {'parent', 'joint', 'child', 'all', 'none'} | default = 'all' | char array or string
+            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
+
+            arguments, obj Arm,
+                jointValue {Tools.mustAndOr('or', jointValue, ...
+                    'mustAndOr', {'and', 'mustBeReal', [], 'mustBeNumeric', [], 'mustBeFinite', [], 'mustBeVector', []}, ...
+                    'mustBeEmpty', [])} = []
+                frameSpec {mustBeMember(frameSpec, {'parent', 'joint', 'child', 'all', 'none'})} = 'all'
+            end
+
+            if any(strcmp(frameSpec, 'none')), return, end
+            obj.cmpATree(1); % compute A homogeneus matrix
+            joints = [obj.links.joint]; moving_joints = ~strcmp({joints.type}, 'fixed');
+
+            % If jointValue does not match with neither # of moving joint
+            % and all joints, use the homePosition of every joint
+            if isempty(jointValue), jointValue = [joints.homePosition];
+            elseif all(length(jointValue) ~= [length(obj.linksName), sum(moving_joints)])
+                warning(['Cannot plot the joint since ' ...
+                    'there is a further dependency on other joints.\n' ...
+                    'Resort to plot of Arm class or check jointValue'], [])
+                jointValue = [joints.homePosition];
+            end
+
+            % Padd joint values
+            if length(jointValue) ~= length(obj.linksName)
+                tmp = zeros(length(obj.linksName), 1);
+                tmp(moving_joints) = jointValue; jointValue = tmp;
+            end
+
+            colors = orderedcolors("gem12");
+            for k = 1:length(obj.linksName)
+                % Plot each link
+                count = length(obj.linksName);
+                indeces = zeros(size(obj.linksName)); indeces(end) = k;
+                iterLink = obj.links(k);
+                while ~isempty(iterLink.parent)
+                    indeces(count - 1) = iterLink.parent; count = count - 1;
+                    iterLink = obj.links(iterLink.parent);
+                end
+
+                obj.links(k).plot(jointValue(indeces(count:end)), frameSpec, ...
+                    'FaceColor', colors(k, :), 'EdgeColor', colors(k, :), 'FaceAlpha', 0.1)
+            end
+        end
+
+        % ------------------------- %
+
+        function plotGraph(obj)
+            % plotGraph - Plot Arm graph representing the link connection (digraph)
+            %
+            % Syntax
+            %   plotGraph
 
             % Graph representing connections
             t = [obj.links.child]; s = [obj.links.parent];
             G = digraph(s, t, nan(size(s)), obj.linksName);
             plot(G,'Layout', 'layered')
+        end
+
+        % ------------------------- %
+
+        function cmpATree(obj, index)
+            % cmpATree - Compute the A homogeneous matrix of each joint
+            % w.r.t. base frame (link with no parent)
+            %
+            % Syntax
+            %   cmpATree
+            %   cmpTree(1)
+            %       (Despite working with othr numbers the correct
+            %       behaviours is obtained when called with 1)
+
+            arguments, obj Arm, index {mustBeInteger, mustBePositive} = 1, end
+
+            import casadi.*
+            
+            % Recursively compute A homogeneous matrix
+            x_prev = casadi.MX.get_input(obj.links(index).joint.A); x_prev = x_prev{1};
+            for k = obj.links(index).child
+                obj.links(k).joint.A = Function('A', {x_prev}, ...
+                    {obj.links(index).joint.A(x_prev)*obj.links(index).joint.c2j});
+                cmpATree(obj, k)
+            end
         end
 
         % ------------------------- %
@@ -228,14 +318,92 @@ classdef Arm < handle_light
     % ---------------- Get/set fun. -------------------- %
 
     methods
+        function A = get.A_genFun(obj)
+            % Return A joint's homogeneous matrix funtions (casADi) w.r.t. controllable joints
+            
+            arguments, obj Arm, end
+            
+            import casadi.*
+            A = cell(size(obj.linksName));
+            obj.cmpATree(1)
+            
+            children = obj.links(1).child;
+            mask = eye(length(obj.linksName));
+            while ~isempty(children)
+                for k = 1:length(children)
+                    mask(children(k), obj.links(children(k)).parent) = true;
+                    mask(children(k), :) = mask(children(k), :) | mask(obj.links(children(k)).parent, :);
+                end
+                children = [obj.links(children).child];
+            end
+            
+            joints = [obj.links.joint];
+            x = MX.sym('x', [sum(~strcmp({joints.type}, 'fixed')), 1]);
+            x_ext = MX.zeros([length(obj.linksName), 1]);
+            x_ext(find(~strcmp({joints.type}, 'fixed'), length(x))) = x;
 
+            for k = 1:length(obj.linksName)
+                A{k} = Function(['A_fun', num2str(k)], {x}, ...
+                    {obj.links(k).joint.A(x_ext(find(mask(k, :), sum(mask(k, :)))))});
+            end
+        end
     end
 
 
     % ------------------- Static ----------------------- %
 
     methods (Static)
+        function armObj = copyRigidBodyTree(rigidBodyTreeObj)
+            % copyRigidBodyTree - Copy rigidBodyTree in Arm object
+            %
+            % Syntax
+            %   copyRigidBodyTree(rigidBodyTreeObj)
+            %
+            % Input:
+            %   rigidBodyTreeObj - rigidBodyTree object
+            %       rigidBodyTree
+            %       Vaidation: mustBeNonempty, mustBeA(..., 'rigidBodyTree')
+            % Output:
+            %   armObj - Arm object
+            %       Arm
 
+            arguments (Input)
+                rigidBodyTreeObj {mustBeNonempty, mustBeA(rigidBodyTreeObj, 'rigidBodyTree')}
+            end
+            arguments (Output), armObj Arm, end
+            
+            armObj = Arm('arm');
+            armObj.gravity = reshape(rigidBodyTreeObj.Gravity, [3, 1]);
+
+            links = cell(size(rigidBodyTreeObj.Bodies));
+            parent = cell(size(rigidBodyTreeObj.Bodies));
+            for k = 1:length(rigidBodyTreeObj.Bodies)
+                if isa(rigidBodyTreeObj.Bodies{k}, 'rigidBody'), links{k} = Link.copyRigidBody(rigidBodyTreeObj.Bodies{k});
+                else, links{k} = rigidBodyTreeObj.Bodies{k}; end
+                if ~strcmp(rigidBodyTreeObj.Bodies{k}.Parent.Name, rigidBodyTreeObj.BaseName)
+                    parent{k} = rigidBodyTreeObj.Bodies{k}.Parent.Name;
+                end
+            end
+
+            base = false;
+            while ~isempty(parent)
+                for k = 1:length(parent)
+                    if base
+                        if any(strcmp(parent{k}, armObj.linksName))
+                            armObj.addLink(links{k}, parent{k});
+                            break
+                        end
+                    else
+                        if ~isempty(parent{k}), continue, end
+                        base = true;
+                        armObj.addLink(links{k});
+                        break
+                    end
+                end
+                parent(k) = [];
+                links(k) = [];
+            end
+        end
     end
 
 end

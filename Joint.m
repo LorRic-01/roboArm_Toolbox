@@ -70,9 +70,8 @@ classdef Joint < handle_light
         % A - Homogeneous matrix representing the (moved) joint
         %   Set: set the frame of the parent (child of the previous joint) [SE3(4, 4) | MX.sym(4, 4)]
         %   Get: get the joint (moved) frame [MX.sym(4, 4)]
-        %   Validation: Tools.mustHaveSize(..., [4, 4]), mustBeA(..., 'casadi.MX') OR Tools.mustBeSE3
-        A {Tools.mustHaveSize(A, [4, 4]), ...
-            Tools.mustAndOr('or', A, 'mustBeA', 'casadi.MX', 'mustBeSE3', [])}
+        %   Validation: mustBeA(..., 'casadi.Function') OR Tools.mustBeSE3
+        A {Tools.mustAndOr('or', A, 'mustBeA', 'casadi.Function', 'mustBeSE3', [])}
     end
 
     % ------------------------- %
@@ -80,9 +79,8 @@ classdef Joint < handle_light
     properties (Access = {?Joint, ?Link, ?Arm}, Hidden)
         % Ab - Hidden homogeneous matrix containing the parent (child of the previous joint) frame
         %   defualt = eye(4) | double(4, 4) or MX.sym(4, 4)
-        %   Validation: Tools.mustHaveSize(..., [4, 4]), mustBeA(..., 'casadi.MX') OR Tools.mustBeSE3
-        Ab {Tools.mustHaveSize(Ab, [4, 4]), ...
-            Tools.mustAndOr('or', Ab, 'mustBeA', 'casadi.MX', 'mustBeSE3', [])} = eye(4)
+        %   Validation: mustBeA(..., 'casadi.Function') OR Tools.mustBeSE3
+        Ab {Tools.mustAndOr('or', Ab, 'mustBeA', 'casadi.Function', 'mustBeSE3', [])} = eye(4)
     end
 
 
@@ -226,40 +224,41 @@ classdef Joint < handle_light
             % Input:
             %   jointValue - Joint value
             %       rad or m | default = homePosition | empty or double(1, :)
+            %       If length(jointValue) > 1 -> jointValue = [prevJoints, currJoint]
             %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector
             %   specifics - Frame(s) to show
-            %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
-            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all'})
+            %       in {'parent', 'joint', 'child', 'all', 'none'} | default = 'joint' | char array or string
+            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
             
             arguments
                 obj Joint,
                 jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector} = obj.homePosition
-                specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all'})} = 'joint'
+                specifics {mustBeMember(specifics, {'parent', 'joint', 'child', 'all', 'none'})} = 'joint'
             end
 
+            if any(strcmp(specifics, 'none')), return; end
             if isempty(jointValue), jointValue = obj.homePosition; end
             if isempty(specifics), specifics = {'joint'}; end
 
-            
-            if (isa(obj.A, 'casadi.MX') && (obj.A.numel_in ~= length(jointValue))) || ...
-                    isa(obj.Ab, 'casadi.MX') && (obj.Ab.numel_in ~= length(jointValue))
+            if (isa(obj.A, 'casadi.Function') && (obj.A.numel_in ~= length(jointValue))) || ...
+                    (isa(obj.Ab, 'casadi.Function') && (obj.Ab.numel_in ~= (length(jointValue) - 1)))
                 warning(['Cannot plot the joint since ' ...
                     'there is a further dependency on other joints.\n' ...
                     'Resort to plot of Arm class or check jointValue'], []), return
             end
             
             A_fun = obj.A; A_val = full(A_fun(jointValue));
-            if isa(obj.Ab, 'casadi.MX'), Ab_val = full(obj.Ab(jointValue));
+            if isa(obj.Ab, 'casadi.Function'), Ab_val = full(obj.Ab(jointValue(1:end-1)));
             else, Ab_val = obj.Ab;
             end
 
-            if any(ismember(specifics, 'all')), specifics = {'parent', 'joint', 'child'}; end
+            if any(strcmp(specifics, 'all')), specifics = {'parent', 'joint', 'child'}; end
             if ~iscell(specifics), specifics = {specifics}; end
             specifics = unique(specifics);
             for k = specifics
                 switch k{:}
                     case 'parent', Tools.plotFrames(Ab_val, [obj.name, '_p'], ':');
-                    case 'joint', Tools.plotFrames(A_val, [obj.name, '_m'], '-');
+                    case 'joint', Tools.plotFrames(A_val, [obj.name, '_j'], '-');
                     case 'child', Tools.plotFrames(A_val*obj.c2j, [obj.name, '_c'], '--');
                 end
             end
@@ -300,7 +299,12 @@ classdef Joint < handle_light
                 case 'prismatic', Aj = [MX.eye(3), x*obj.jointAxis; 0, 0, 0, 1];
                 otherwise, Aj = MX.eye(4);
             end
-            A = Function('A', {x}, {obj.Ab*obj.j2p*Aj});
+
+            if isa(obj.Ab, 'casadi.Function')
+                x_prev = casadi.MX.get_input(obj.Ab); x_prev = x_prev{1};
+                A = Function('A', {[x_prev; x]}, {obj.Ab(x_prev)*obj.j2p*Aj});
+            else, A = Function('A', {x}, {obj.Ab*obj.j2p*Aj});
+            end
         end
     end
 

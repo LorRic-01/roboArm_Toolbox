@@ -203,3 +203,16 @@ A_fun = Function('A_fun', {x}, {A});
 
 dA = jacobian(A, x);
 dA_fun = Function('dA_fun', {x}, {dA});
+
+%%
+import casadi.*
+x = MX.sym('x', 1, 1);
+
+a_fun = Function('a_fun', {x}, {2*x});
+x_prev = casadi.MX.get_input(a_fun); x_prev = x_prev{1};
+
+x_new = MX.sym('x', 1, 1);
+b_fun = Function('b_fun', {[x_new, x_prev]}, {3*x_new + a_fun(x_prev)});
+
+
+vrrotvec(a,b)

@@ -302,38 +302,50 @@ classdef Link < handle_light
             %
             % Input:
             %   jointValue - Joint value
-            %       rad or m | default = homePosition | empty or double(1, 1)
-            %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty
+            %       rad or m | default = homePosition | empty or double(1, :)
+            %       If length(jointValue) > 1 -> jointValue = [prevJoints, currJoint]
+            %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector
             %   frameSpec - Frame(s) to show
-            %       in {'parent', 'joint', 'child', 'all'} | default = 'joint' | char array or string
-            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all'})
+            %       in {'parent', 'joint', 'child', 'all', 'none'} | default = 'joint' | char array or string
+            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
             %   surfSpec - Surface style
             %       default = {'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1}
             %       See also matlab.graphics.chart.primitive.Surface
             
             arguments
                 obj Link,
-                jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeScalarOrEmpty} = obj.joint.homePosition
-                frameSpec {mustBeMember(frameSpec, {'parent', 'joint', 'child', 'all'})} = 'joint'
+                jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector} = obj.homePosition
+                frameSpec {mustBeMember(frameSpec, {'parent', 'joint', 'child', 'all', 'none'})} = 'joint'
             end
             arguments (Repeating), surfSpec, end
 
-            % Plot joint
-            obj.joint.plot(jointValue, frameSpec)
-            if isa(obj.joint.Ab, 'casadi.MX'), return, end
+            if any(strcmp(frameSpec, 'none')), return; end
+            if isempty(jointValue), jointValue = obj.joint.homePosition; end
+
+            obj.joint.plot(jointValue, frameSpec) % Plot joint
+
+            % Plot visual
+            if (isa(obj.joint.A, 'casadi.Function') && (obj.joint.A.numel_in ~= length(jointValue))) || ...
+                    (isa(obj.joint.Ab, 'casadi.Function') && (obj.joint.Ab.numel_in ~= (length(jointValue) - 1)))
+                return
+            end
+
+            A_fun = obj.joint.A; A_val = full(A_fun(jointValue));
+            if isa(obj.joint.Ab, 'casadi.Function'), Ab_val = full(obj.joint.Ab(jointValue(1:end-1)));
+            else, Ab_val = obj.joint.Ab;
+            end
 
             if any(ismember(frameSpec, 'all')), frameSpec = {'parent', 'joint', 'child'}; end
             if ~iscell(frameSpec), frameSpec  = {frameSpec}; end
             frameSpec = unique(frameSpec);
 
-            A_fun = obj.joint.A; A_val = full(A_fun(jointValue));
             for k = 1:length(frameSpec)
-                if strcmp(frameSpec{k}, 'child')
+                if any(strcmp(frameSpec{k}, {'joint', 'child'}))
                     if isempty(obj.visual{2}), continue, end
                     Tools.plotTri(obj.visual{2}, A_val, surfSpec{:})
                 else
                     if isempty(obj.visual{1}), continue, end
-                    Tools.plotTri(obj.visual{1}, obj.joint.Ab, surfSpec{:})
+                    Tools.plotTri(obj.visual{1}, Ab_val, surfSpec{:})
                 end
             end
         end

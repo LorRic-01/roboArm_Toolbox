@@ -4,6 +4,7 @@ classdef Tools
     %   problem definition and object visualization
     %
     % Tools Methods:
+    %   addCasADiToPath - Add CasADi folder to Matlab path
     %   checkCasADi - Check if CasADi folder is already in Matlab path
     %   cmpDynParams - Compute dynamics parameters (CoM and inertia w.r.t CoM)
     %   convertToString - Convert data into string/char array
@@ -93,6 +94,21 @@ classdef Tools
             lastwarn(''); addpath(searchPath)
             if ~isempty(lastwarn), throw(MException('Tools:addpathError', ...
                     'Error during addpath(%s)', searchPath)), end
+        end
+
+        % ------------------------- %
+
+        function checkCasADi
+            % checkCasADi - Check if CasADi folder is already in Matlab path
+            %
+            % Syntax
+            %   checkCasADi
+
+            if contains(path, 'casadi', 'IgnoreCase', ispc), return, end
+            if strcmp(Tools.tim.Running, 'off')
+                Tools.tim.start
+                warning('Missing CasADi toolbox/folder. See Tools.addCasADiToPath to help adding CasADi folder.')
+            end
         end
 
         % ------------------------- %
@@ -248,21 +264,6 @@ classdef Tools
             I = [sum(xyz(:, [2, 3]).^2, 'all'), sum(xyz(:, [1, 3]).^2, 'all'), sum(xyz(:, [1, 2]).^2, 'all'), ...
                 -sum(xyz(:, 2).*xyz(:, 3), 'all'), -sum(xyz(:, 1).*xyz(:, 3), 'all'), -sum(xyz(:, 1).*xyz(:, 2), 'all')];
             I = I/size(swarm, 1);
-        end
-
-        % ------------------------- %
-
-        function checkCasADi
-            % checkCasADi - Check if CasADi folder is already in Matlab path
-            %
-            % Syntax
-            %   checkCasADi
-
-            if contains(path, 'casadi', 'IgnoreCase', ispc), return, end
-            if strcmp(Tools.tim.Running, 'off')
-                Tools.tim.start
-                warning('Missing CasADi toolbox/folder. See Tools.addCasADiToPath to help adding CasADi folder.')
-            end
         end
 
         % ------------------------- %
@@ -865,6 +866,99 @@ classdef Tools
             Tools.mustHaveSize(w, [1, 3])
 
             A = [[0 -w(3), w(2)]; [w(3), 0, -w(1)]; [-w(2), w(1), 0]];
+        end
+
+        % ------------------------- %
+
+        function r = vrrotvec(a, b, options)
+            %VRROTVEC Calculate a rotation between two vectors.
+            %   R = VRROTVEC(A, B) calculates a rotation needed to transform 
+            %   a 3d vector A to a 3d vector B.
+            %
+            %   R = VRROTVEC(A, B, OPTIONS) calculates the rotation with the default 
+            %   algorithm parameters replaced by values defined in the structure
+            %   OPTIONS.
+            %
+            %   The OPTIONS structure contains the following parameters:
+            %
+            %     'epsilon'
+            %        Minimum value to treat a number as zero. 
+            %        Default value of 'epsilon' is 1e-12.
+            %
+            %   The result R is a 4-element axis-angle rotation row vector.
+            %   First three elements specify the rotation axis, the last element
+            %   defines the angle of rotation.
+            %
+            %   See also VRROTVEC2MAT, VRROTMAT2VEC, VRORI2DIR, VRDIR2ORI.
+            
+            %   Copyright 1998-2018 HUMUSOFT s.r.o. and The MathWorks, Inc.
+            
+            % test input arguments
+            narginchk(2, 3);
+            
+            if ~isnumeric(a) || ~isreal(a)
+              error(message('sl3d:vrdirorirot:argnotreal'));
+            end
+            
+            if (length(a) ~= 3)
+              error(message('sl3d:vrdirorirot:argbaddim', 3));
+            end
+            
+            if ~isnumeric(b) || ~isreal(b)
+              error(message('sl3d:vrdirorirot:argnotreal'));
+            end
+            
+            if (length(b) ~= 3)
+              error(message('sl3d:vrdirorirot:argbaddim', 3));
+            end
+            
+            if nargin == 2
+              % default options values
+              epsilon = 1e-12;
+            else
+              if ~isstruct(options)
+                 error(message('sl3d:vrdirorirot:optsnotstruct'));
+              else
+                % check / read the 'epsilon' option
+                if ~isfield(options,'epsilon') 
+                  error(message('sl3d:vrdirorirot:optsfieldnameinvalid')); 
+                elseif (~isreal(options.epsilon) || ~isnumeric(options.epsilon) || options.epsilon < 0)
+                  error(message('sl3d:vrdirorirot:optsfieldvalueinvalid'));   
+                else
+                  epsilon = options.epsilon;
+                end
+              end
+            end
+            
+            % compute the rotation, vectors must be normalized
+            an = a;
+            bn = b;
+            
+            % test for zero input argument magnitude after normalize to take epsilon 
+            % into account
+            if (~any(an) || ~any(bn))
+              error(message('sl3d:vrdirorirot:argzeromagnitude'));
+            end
+            
+            ax = cross(an, bn);
+            % min to eliminate possible rounding errors that can lead to dot product >1
+            angle = acos(min(dot(an, bn), 1));
+            
+            % if cross(an, bn) is zero, vectors are parallel (angle = 0) or antiparallel
+            % (angle = pi). In both cases it is necessary to provide a valid axis. Let's
+            % select one that satisfies both cases - an axis that is perpendicular to
+            % both vectors. We find this vector by cross product of the first vector 
+            % with the "least aligned" basis vector.
+            if ~any(ax)
+                absa = abs(an);
+                [~, mind] = min(absa);
+                c = zeros(1,3);
+                c(mind) = 1;
+                ax = cross(an, c);
+            end
+            
+            % Be tolerant to column vector arguments, produce a row vector
+            r = [ax(:)' angle];
         end
     end
 end
