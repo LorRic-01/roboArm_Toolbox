@@ -74,28 +74,16 @@ for k = 1:8
     link = Link(['link_', num2str(k)], joint);
 
     A_c2j = Tools.rotTra(DHParams); vec = A_c2j(1:3, 4);
-    link.addVisual('cyl', 'c2j', [0.1, norm(vec)], [axang2rotm(Tools.vrrotvec([0, 0, 1].', vec/norm(vec))), [0, 0, 0].'; [0, 0, 0, 1]]);
+    link.addVisual('box', 'c2j', [0.1, 0.1, norm(vec)], [axang2rotm(Tools.vrrotvec([0, 0, 1].', vec/norm(vec))), [0, 0, 0].'; [0, 0, 0, 1]]);
     
     arm.addLink(link, linkConnection{k})
 end
 arm.toString
-figure(1), clf, arm.plotGraph, figure(2), clf, arm.plot([], {'parent', 'child'})
+figure, arm.plotGraph, figure, arm.plot([], {'parent', 'child'})
 axis equal, axis tight, grid on, view(3)
 xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]')
 arm.removeLink('link_4')
-figure(3), clf, arm.plotGraph, figure(4), clf, arm.plot([], {'parent', 'child'})
+figure, arm.plotGraph, figure, arm.plot([], {'parent', 'child'})
 axis equal, axis tight, grid on, view(3)
 xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]')
-
-%% Arm new
-arm = Arm('pippo');
-joint = Joint(['joint_', num2str(k)], 'revolute', [-pi, pi].', 0, [0, 0, 1].');
-    DHParams = [1, 0, 1, 0]; joint.setFixedTR(DHParams, 'c2j'); 
-link = Link('1', joint);
-link.addVisual('stl', 'c2j', 'EndEffector_merge_fixed.stl');
-arm.addLink(link)
-
-link = Link('2');
-link.addVisual('box', 'c2j', [0.1, 0.1, 0.2]);
-arm.addLink(link, '1')
 

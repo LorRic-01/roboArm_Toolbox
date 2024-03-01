@@ -215,7 +215,7 @@ classdef Link < handle_light
                     case 'box', mustBeReal(data),
                         if numel(data) ~= 3
                             warning('Wrong dimension for box visual element.\nPassed: %s, Desired: %s\tValue used: %s', ...
-                                Tools.convertToString(size(data)), Tools.convertToStringnum2str([3, 1]), Tools.convertToString(data(1)*ones(1, 3)))
+                                Tools.convertToString(size(data)), Tools.convertToString([3, 1]), Tools.convertToString(data(1)*ones(1, 3)))
                             data = data(1)*ones(1, 3);
                         end
                         model = multicuboid(data(1), data(2), data(3));
