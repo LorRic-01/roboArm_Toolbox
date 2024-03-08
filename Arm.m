@@ -41,6 +41,11 @@ classdef Arm < handle_light
         %   defualt = empty | cell array(casadi.Function)
         %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
         A_genFun {Tools.mustAndOr('or', A_genFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')}
+
+        % A_CoMgenFun - A CoM's homogeneous matrix funtions (casADi) w.r.t. all controllable joints
+        %   defualt = empty | cell array(casadi.Function)
+        %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
+        A_CoMgenFun {Tools.mustAndOr('or', A_CoMgenFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')}
     end
 
 
@@ -181,8 +186,23 @@ classdef Arm < handle_light
         end
 
         % ------------------------- %
+        
+        function cmpKin(obj)
+            % cmpKin - Compute arm kinematic model w.r.t base frame (link with no parent)
+            %
+            % Syntax
+            %   cmpKin
 
-        function plot(obj, jointValue, frameSpec)
+            arguments, obj Arm, end
+            
+            A_fun = obj.A_genFun;
+            
+            
+        end
+
+        % ------------------------- %
+
+        function plot(obj, jointValue, frameSpec, visual)
             % plot - Plot Arm object, namely Link, Joint and visual
             % Frame legend:
             %   - dotted line: parent joint frame ('parent')
@@ -194,6 +214,7 @@ classdef Arm < handle_light
             % Syntax
             %   plot(jointValue)
             %   plot(jointValue, frameSpec)
+            %   plot(jointValue, frameSpec, visual)
             %
             % Input:
             %   jointValue - Joint value
@@ -201,13 +222,18 @@ classdef Arm < handle_light
             %       Validation: (mustBeReal AND mustBeNumeric AND mustBeFinite AND mustBeVector) OR Tools.mustBeEmpty
             %   frameSpec - Frame(s) to show
             %       in {'parent', 'joint', 'child', 'all', 'none'} | default = 'all' | char array or string
-            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
+            %       Validation: Tools.mustBeEmpty OR mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
+            %   visual - Plot visual objects
+            %       default = true | logical
+            %       Validation: mustBeA(..., 'logical')
 
             arguments, obj Arm,
                 jointValue {Tools.mustAndOr('or', jointValue, ...
                     'mustAndOr', {'and', 'mustBeReal', [], 'mustBeNumeric', [], 'mustBeFinite', [], 'mustBeVector', []}, ...
                     'mustBeEmpty', [])} = []
-                frameSpec {mustBeMember(frameSpec, {'parent', 'joint', 'child', 'all', 'none'})} = 'all'
+                frameSpec {Tools.mustAndOr('or', frameSpec, ...
+                    'mustBeMember', {'parent', 'joint', 'child', 'all', 'none'}, 'mustBeEmpty', [])} = 'all'
+                visual {mustBeA(visual, 'logical')} = true
             end
 
             if any(strcmp(frameSpec, 'none')), return, end
@@ -241,8 +267,11 @@ classdef Arm < handle_light
                     iterLink = obj.links(iterLink.parent);
                 end
 
+                if visual, surfSpec = {'FaceColor', colors(k, :), 'EdgeColor', colors(k, :), 'FaceAlpha', 0.1};
+                else, surfSpec = {};
+                end
                 obj.links(k).plot(jointValue(indeces(count:end)), frameSpec, ...
-                    'FaceColor', colors(k, :), 'EdgeColor', colors(k, :), 'FaceAlpha', 0.1)
+                    surfSpec{:});
             end
         end
 
@@ -345,6 +374,45 @@ classdef Arm < handle_light
             for k = 1:length(obj.linksName)
                 A{k} = Function(['A_fun', num2str(k)], {x}, ...
                     {obj.links(k).joint.A(x_ext(find(mask(k, :), sum(mask(k, :)))))});
+            end
+        end
+
+        % ------------------------- %
+
+        function A_CoM = get.A_CoMgenFun(obj)
+            % Return A CoM's homogeneous matrix funtions (casADi) w.r.t. controllable joints
+            
+            arguments, obj Arm, end
+            
+            import casadi.*
+            A_CoM = cell(length(obj.linksName), 2);
+            obj.cmpATree(1)
+            
+            children = obj.links(1).child;
+            mask = eye(length(obj.linksName));
+            while ~isempty(children)
+                for k = 1:length(children)
+                    mask(children(k), obj.links(children(k)).parent) = true;
+                    mask(children(k), :) = mask(children(k), :) | mask(obj.links(children(k)).parent, :);
+                end
+                children = [obj.links(children).child];
+            end
+            mask_p = mask - eye(length(obj.linksName));
+            
+            joints = [obj.links.joint];
+            x = MX.sym('x', [sum(~strcmp({joints.type}, 'fixed')), 1]);
+            x_ext = MX.zeros([length(obj.linksName), 1]);
+            x_ext(find(~strcmp({joints.type}, 'fixed'), length(x))) = x;
+
+            for k = 1:length(obj.linksName)
+                A_CoMp = obj.links(k).A_CoM{1}; A_CoMj = obj.links(k).A_CoM{2};
+                if sum(mask_p(k, :))
+                A_CoM{k, 1} = Function(['A_CoMfun_', num2str(k)], {x}, ...
+                    {A_CoMp(x_ext(find(mask_p(k, :), sum(mask_p(k, :)))))});
+                else, A_CoM{k, 1} = Function(['A_CoMfun_', num2str(k)], {x}, {A_CoMp});
+                end
+                A_CoM{k, 2} = Function(['A_CoMfun_', num2str(k)], {x}, ...
+                    {A_CoMj(x_ext(find(mask(k, :), sum(mask(k, :)))))});
             end
         end
     end

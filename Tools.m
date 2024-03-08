@@ -9,6 +9,7 @@ classdef Tools
     %   cmpDynParams - Compute dynamics parameters (CoM and inertia w.r.t CoM)
     %   convertToString - Convert data into string/char array
     %   inertiaConv - Inertia matrix-vector conversion
+    %   invA - Compute inverse of homogeneous matrix
     %   isAxis - Check if data is an admissible axis
     %   isUnique - Check if data is composed only of unique data
     %   mustAndOr - Validate if data is ... {and, or} ...
@@ -20,6 +21,7 @@ classdef Tools
     %   mustBeUnique - Validate that data is composed only of unique data
     %   mustHaveField - Validate that data has the desired filed
     %   mustHaveSize - Validate that data has specific dimension
+    %   plotCoM - Plot CoM element identifier
     %   plotFrames - Plot frame, passed as homogeneous matrix
     %   plotTri - Plot triangulation
     %   rotTra - Check or generate roto-translation from data
@@ -348,6 +350,26 @@ classdef Tools
             end
         end
 
+        % ------------------------- %
+
+        function A_inv = invA(A)
+            % invA - Compute inverse of homogeneous matrix
+            %
+            % Syntax
+            %   A_inv = invA(A)
+            %
+            % Input:
+            %   A - Homogeneous matrix
+            %       belong to SE(3)
+            %       Validation: no validation but the inversion is based on
+            %       the homogeneous matrix structure
+            % Output:
+            %   A_inv - Inverse homogeneous matrix
+            %       belong to SE(3)
+            
+            A_inv = [A(1:3, 1:3).', (-A(1:3, 1:3).')*A(1:3, 4);
+                0, 0, 0, 1];
+        end
 
         % ------------------------- %
         
@@ -726,6 +748,46 @@ classdef Tools
                 throw(MException('Tools:wrongSize', ['Data does not match the required dimension.' ...
                     '\nActual dimension = %s, Desired = %s'], Tools.convertToString(size(data)), Tools.convertToString(dim)))
             end
+        end
+
+        % ------------------------- %
+
+        function plotCoM(A, r)
+            % plotCoM - Plot CoM element identifier
+            %
+            % Syntax
+            %   plotCoM(pos)
+            %   plotCoM(A)
+            %   plotCoM(..., r)
+            %
+            % Input:
+            %   A - Homogeneous matrix representing pose of Center of Mass (CoM)
+            %       belong to SE(3) | double(4, 4)
+            %   pos - Position of Center of Mass (CoM)
+            %       m (3, 1) | double(3, 1)
+            %       Validation: mustBeFinite, mustBeReal, Tools.mustHaveSize(..., [3, 1])
+            %   r - Radius of the sphere representing CoM
+            %       m | default = 0.05 | double(1, 1)
+            %       Validation: mustBeFinite, mustBeReal, mustBeScalarOrEmpty
+
+            arguments
+                A {Tools.mustAndOr('or', A, 'mustBeSE3', [], ...
+                    'mustAndOr', {'and', 'mustBeFinite', [], 'mustBeReal', [],...
+                    'mustHaveSize', [3, 1]})}
+                r {mustBeFinite, mustBeReal, mustBeScalarOrEmpty} = 0.05
+            end
+            
+            if isempty(r), r = 0.05; end
+            if ~isvector(A), A = A(1:3, 4); end
+
+            hold on; [x, y, z] = sphere(8);
+            z_tmp = z; z_tmp((sign(x).*sign(y) > 0) & (abs(x) > 1e-3)) = nan;
+            surf(r*x + A(1), r*y + A(2), r*z_tmp + A(3), 'FaceColor', 'k', 'EdgeColor', 'none')
+           
+
+            z_tmp = z; z_tmp((sign(x).*sign(y) < 0) & (abs(x) > 1e-3)) = nan;
+            surf(r*x + A(1), r*y + A(2), r*z_tmp + A(3), 'FaceColor', 'y', 'EdgeColor', 'none')
+            hold off
         end
 
         % ------------------------- %

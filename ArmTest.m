@@ -71,15 +71,16 @@ for k = 1:8
     joint = Joint(['joint_', num2str(k)], type{k}, [-pi, pi].', 0, [0, 0, 1].');
     DHParams = rand(1, 4); joint.setFixedTR(DHParams, 'c2j'); 
 
-    link = Link(['link_', num2str(k)], joint);
+    link = Link(['link_', num2str(k)], joint); link.mass = [1, 1];
 
     A_c2j = Tools.rotTra(DHParams); vec = A_c2j(1:3, 4);
     link.addVisual('box', 'c2j', [0.1, 0.1, norm(vec)], [axang2rotm(Tools.vrrotvec([0, 0, 1].', vec/norm(vec))), [0, 0, 0].'; [0, 0, 0, 1]]);
-    
+    link.cmpDynParam
+
     arm.addLink(link, linkConnection{k})
 end
 arm.toString
-figure, arm.plotGraph, figure, arm.plot([], {'parent', 'child'})
+figure, arm.plotGraph, figure, arm.plot([], {'parent', 'child'}, true)
 axis equal, axis tight, grid on, view(3)
 xlabel('x [m]'), ylabel('y [m]'), zlabel('z [m]')
 arm.removeLink('link_4')

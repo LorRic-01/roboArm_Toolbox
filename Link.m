@@ -70,6 +70,15 @@ classdef Link < handle_light
         child {mustBeVector, mustBePositive, mustBeInteger} = zeros(1, 0)
     end
 
+    % ------------------------- %
+
+    properties (Dependent, SetAccess = {?Link, ?Arm})
+        % A_CoM - Homogeneous matrix representing the CoM
+        %   default = empty | cell array(casadi.Function)
+        %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function') OR Tools.mustBeSE3
+        A_CoM {Tools.mustAndOr('or', A_CoM, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function', 'mustBeSE3', [])}
+    end
+
 
     % ----------------- Functions ---------------------- %
 
@@ -289,7 +298,7 @@ classdef Link < handle_light
         % ------------------------- %
 
         function plot(obj, jointValue, frameSpec, surfSpec)
-            % plot - Plot Link object, namely Joint and visual
+            % plot - Plot Link object, namely Joint, visual and CoM (if mass ~= 0)
             % Frame legend:
             %   - dotted line: parent joint frame ('parent')
             %   - full line: (moved) joint frame ('joint')
@@ -305,24 +314,28 @@ classdef Link < handle_light
             %       rad or m | default = homePosition | empty or double(1, :)
             %       If length(jointValue) > 1 -> jointValue = [prevJoints, currJoint]
             %       Validation: mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector
-            %   frameSpec - Frame(s) to show
+            %   frameSpec - Frame(s) to show (empty = no frame)
             %       in {'parent', 'joint', 'child', 'all', 'none'} | default = 'joint' | char array or string
-            %       Validation: mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
-            %   surfSpec - Surface style
+            %       Validation: Tools.mustBeEmpty OR mustBeMember(..., {'parent', 'joint', child', 'all', 'none'})
+            %   surfSpec - Surface style (empty = no visual)
             %       default = {'FaceColor', [0 0.4470 0.7410], 'EdgeColor', [0 0.4470 0.7410], 'FaceAlpha', 0.1}
             %       See also matlab.graphics.chart.primitive.Surface
             
             arguments
                 obj Link,
                 jointValue {mustBeReal, mustBeNumeric, mustBeFinite, mustBeVector} = obj.homePosition
-                frameSpec {mustBeMember(frameSpec, {'parent', 'joint', 'child', 'all', 'none'})} = 'joint'
+                frameSpec {Tools.mustAndOr('or', frameSpec, ...
+                    'mustBeMember', {'parent', 'joint', 'child', 'all', 'none'}, 'mustBeEmpty', [])} = 'joint'
             end
             arguments (Repeating), surfSpec, end
 
-            if any(strcmp(frameSpec, 'none')), return; end
             if isempty(jointValue), jointValue = obj.joint.homePosition; end
 
-            obj.joint.plot(jointValue, frameSpec) % Plot joint
+            if ~isempty(frameSpec)
+                if ~any(strcmp(frameSpec, 'none'))
+                    obj.joint.plot(jointValue, frameSpec) % Plot joint
+                end
+            end
 
             % Plot visual
             if (isa(obj.joint.A, 'casadi.Function') && (obj.joint.A.numel_in ~= length(jointValue))) || ...
@@ -330,9 +343,11 @@ classdef Link < handle_light
                 return
             end
 
-            A_fun = obj.joint.A; A_val = full(A_fun(jointValue));
-            if isa(obj.joint.Ab, 'casadi.Function'), Ab_val = full(obj.joint.Ab(jointValue(1:end-1)));
-            else, Ab_val = obj.joint.Ab;
+            A_val = full(obj.joint.A(jointValue)); ACoMj_val = full(obj.A_CoM{2}(jointValue));
+            if isa(obj.joint.Ab, 'casadi.Function')
+                Ab_val = full(obj.joint.Ab(jointValue(1:end-1)));
+                ACoMp_val = full(obj.A_CoM{1}(jointValue(1:end-1)));
+            else, Ab_val = obj.joint.Ab; ACoMp_val = obj.A_CoM{1};
             end
 
             if any(ismember(frameSpec, 'all')), frameSpec = {'parent', 'joint', 'child'}; end
@@ -341,11 +356,13 @@ classdef Link < handle_light
 
             for k = 1:length(frameSpec)
                 if any(strcmp(frameSpec{k}, {'joint', 'child'}))
+                    if obj.mass(1, 2), Tools.plotCoM(ACoMj_val), end
                     if isempty(obj.visual{2}), continue, end
-                    Tools.plotTri(obj.visual{2}, A_val, surfSpec{:})
+                    if ~isempty(surfSpec), Tools.plotTri(obj.visual{2}, A_val, surfSpec{:}), end
                 else
+                    if obj.mass(1, 1), Tools.plotCoM(ACoMp_val), end
                     if isempty(obj.visual{1}), continue, end
-                    Tools.plotTri(obj.visual{1}, Ab_val, surfSpec{:})
+                    if ~isempty(surfSpec), Tools.plotTri(obj.visual{1}, Ab_val, surfSpec{:}), end
                 end
             end
         end
@@ -368,6 +385,29 @@ classdef Link < handle_light
 
             for k = 1:size(inertia, 2), Tools.inertiaConv(inertia(:, k)); end
             obj.I = inertia;
+        end
+
+        % ------------------------- %
+
+        function A = get.A_CoM(obj)
+            % Return homogeneous matrix representing the CoM
+            arguments, obj Link, end
+
+            import casadi.*
+
+            A = cell(1, 2);
+            if isa(obj.joint.Ab, 'casadi.Function')
+                x_prev = casadi.MX.get_input(obj.joint.Ab); x_prev = x_prev{1};
+                A{1} = Function('A_CoM_1', {x_prev},...
+                    {obj.joint.Ab(x_prev)*Tools.invA(obj.joint.j2p)*[eye(3), obj.CoM(:, 1); 0, 0, 0, 1]});
+            else, A{1} = obj.joint.Ab*Tools.invA(obj.joint.j2p)*[eye(3), obj.CoM(:, 1); 0, 0, 0, 1];
+            end
+            if isa(obj.joint.A, 'casadi.Function')
+                x_prev = casadi.MX.get_input(obj.joint.A); x_prev = x_prev{1};
+                A{2} = Function('A_CoM_2', {x_prev},...
+                    {obj.joint.A(x_prev)*[eye(3), obj.CoM(:, 2); 0, 0, 0, 1]});
+            else, A{2} = obj.joint.A*[eye(3), obj.CoM(:, 2); 0, 0, 0, 1];
+            end
         end
     end
 
