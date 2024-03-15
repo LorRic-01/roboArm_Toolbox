@@ -30,7 +30,7 @@ addBody(robot,body1,'base'),  addBody(robot,body2,'body1')
 addBody(robot,body3,'body2'), addBody(robot,body4,'body3')
 addBody(robot,body5,'body4'), addBody(robot,body6,'body5')
 
-arm = Arm(robot); clearvars robot dhparams body* jnt*
+arm = Arm(robot); clearvars dhparams body* jnt*
 % Add visual
 for k = arm.links
     vec = k.joint.c2j(1:3, 4);
@@ -38,6 +38,8 @@ for k = arm.links
         k.addVisual('box', 'c2j', [0.1, 0.1, norm(vec)], [axang2rotm(Tools.vrrotvec([0, 0, 1].', vec/norm(vec))), [0, 0, 0].'; [0, 0, 0, 1]]);
     end
 end
+
+config = homeConfiguration(robot);
 
 figure(1), clf, arm.plot
 axis equal, axis tight, grid on, view(3)

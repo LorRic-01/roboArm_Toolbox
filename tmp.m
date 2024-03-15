@@ -216,3 +216,23 @@ b_fun = Function('b_fun', {[x_new, x_prev]}, {3*x_new + a_fun(x_prev)});
 
 
 vrrotvec(a,b)
+
+%%
+A_fun = arm.A_genFun;
+
+import casadi.*
+
+k = 3;
+x = casadi.MX.get_input(A_fun{k}); x = x{1};
+dx = MX.sym('dx', size(x));
+
+A = A_fun{k}(x);
+T = A(1:3, 4);
+T_dx = jacobian(T, x);
+
+R = A(1:3, 1:3);
+Function(['test' num2str(k)], {[x; dx]}, { ...
+                    Tools.skew(reshape(jacobian(reshape(R, [9, 1]), x)*dx, [3, 3])*R.')})
+
+T_fun = Function('T_fun', {x}, {T});
+T_dxfun = Function('T_dxfun', {x}, {T_dx});

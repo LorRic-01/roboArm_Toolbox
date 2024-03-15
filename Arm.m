@@ -40,12 +40,22 @@ classdef Arm < handle_light
         % A_genFun - A joint's homogeneous matrix funtions (casADi) w.r.t. all controllable joints
         %   defualt = empty | cell array(casadi.Function)
         %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
-        A_genFun {Tools.mustAndOr('or', A_genFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')}
+        A_genFun {Tools.mustAndOr('or', A_genFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')} = {}
 
         % A_CoMgenFun - A CoM's homogeneous matrix funtions (casADi) w.r.t. all controllable joints
         %   defualt = empty | cell array(casadi.Function)
         %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
-        A_CoMgenFun {Tools.mustAndOr('or', A_CoMgenFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')}
+        A_CoMgenFun {Tools.mustAndOr('or', A_CoMgenFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')} = {}
+
+        % vw_genFun - Velocities (linear and angular) (casADi) w.r.t. all controllable joints
+        %   defualt = empty | cell array(casadi.Function)
+        %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
+        vw_genFun {Tools.mustAndOr('or', vw_genFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')} = {}
+
+        % vw_CoMgenFun - CoMs velocities (linear and angular) (casADi) w.r.t. all controllable joints
+        %   defualt = empty | cell array(casadi.Function)
+        %   Validation: Tools.mustBeEmpty OR Tools.mustBeCellA(..., 'casadi.Function')
+        vw_CoMgenFun {Tools.mustAndOr('or', vw_CoMgenFun, 'mustBeEmpty', [], 'mustBeCellA', 'casadi.Function')} = {}
     end
 
 
@@ -186,18 +196,117 @@ classdef Arm < handle_light
         end
 
         % ------------------------- %
-        
+
+        function cmpKinDiffkinDyn(obj)
+            % cmpKinDiffKinDyn - Compute kinematic, differential kinematic and
+            % dynamics functions. Save computation in the corresponding
+            % elements of the object
+            %
+            % Syntax
+            %   cmpKinDiffKinDyn
+            %
+            % Update
+            %   A_genFun, A_CoMgenFun, vw_genFun, vw_CoMgenFun
+
+            arguments, obj Arm, end
+
+            import casadi.*
+            obj.cmpDiffKin
+
+        end
+
+        % ------------------------- %
+
         function cmpKin(obj)
-            % cmpKin - Compute arm kinematic model w.r.t base frame (link with no parent)
+            % cmpKin - Compute kinematic functions. Save computation in the
+            % corresponding elements of the object
             %
             % Syntax
             %   cmpKin
+            %
+            % Update
+            %   A_genFun, A_CoMgenFun
 
             arguments, obj Arm, end
-            
-            A_fun = obj.A_genFun;
-            
-            
+
+            import casadi.*
+            obj.cmpATree(1)
+
+            % Transform A homogeneous matrix w.r.t. controllable joints
+            mask = eye(length(obj.linksName));
+            children = obj.links(1).child;
+            while ~isempty(children)
+                for k = 1:length(children)
+                    mask(children(k), obj.links(children(k)).parent) = true;
+                    mask(children(k), :) = mask(children(k), :) | mask(obj.links(children(k)).parent, :);
+                end
+                children = [obj.links(children).child];
+            end
+            mask_p = mask - eye(length(obj.linksName)); % mask for parent links
+
+            % Avoid fixed links
+            joints = [obj.links.joint];
+            x = MX.sym('x', [sum(~strcmp({joints.type}, 'fixed')), 1]);
+            x_ext = MX.zeros([length(obj.linksName), 1]);
+            if size(x, 1) > 0
+                x_ext(find(~strcmp({joints.type}, 'fixed'), length(x))) = x;
+            end
+
+            % Conversion
+            A = cell(length(obj.linksName), 1); A_CoM = cell(length(obj.linksName), 2);
+            for k = 1:length(obj.linksName)
+                % Joint
+                A{k} = Function(['A_fun_', num2str(k)], {x}, ...
+                    {obj.links(k).joint.A(x_ext(find(mask(k, :), sum(mask(k, :)))))});
+
+                % CoMs
+                A_CoMp = obj.links(k).A_CoM{1}; A_CoMj = obj.links(k).A_CoM{2};
+                if sum(mask_p(k, :))
+                A_CoM{k, 1} = Function(['A_CoMfun_', num2str(k)], {x}, ...
+                    {A_CoMp(x_ext(find(mask_p(k, :), sum(mask_p(k, :)))))});
+                else, A_CoM{k, 1} = Function(['A_CoMfun_', num2str(k)], {x}, {A_CoMp});
+                end
+                A_CoM{k, 2} = Function(['A_CoMfun_', num2str(k)], {x}, ...
+                    {A_CoMj(x_ext(find(mask(k, :), sum(mask(k, :)))))});
+            end
+            obj.A_genFun = A; obj.A_CoMgenFun = A_CoM;
+        end
+
+        % ------------------------- %
+
+        function cmpDiffkin(obj)
+            % cmpKin - Compute differential kinematic functions. Save 
+            % computation in the corresponding elements of the object
+            %
+            % Syntax
+            %   cmpDiffkin
+            %
+            % Update
+            %   A_genFun, A_CoMgenFun, vw_genFun, vw_CoMgenFun
+
+            arguments, obj Arm, end
+
+            import casadi.*
+            obj.cmpKin
+        
+            vw = cell(length(obj.linksName), 1);
+            vw_CoM = cell(length(obj.linksName), 2);
+
+            % Variables
+            x = casadi.MX.get_input(obj.A_genFun{1}); x = x{1};
+            dx = MX.sym('dx', size(x));
+            for k = 1:length(obj.linksName)
+                A = obj.A_genFun{k}(x); A_CoMp = obj.A_CoMgenFun{k, 1}(x); A_CoMc = obj.A_CoMgenFun{k, 2}(x);
+                
+                vw{k} = Function(['vw_fun_' num2str(k)], {[x; dx]}, { ...
+                    [jacobian(A(1:3, 4), x)*dx; Tools.skew(reshape(jacobian(reshape(A(1:3, 1:3), [9, 1]), x)*dx, [3, 3])*R.')]});
+                vw_CoM{k, 1} = Function(['vw_CoMfun_' num2str(k)], {[x; dx]}, { ...
+                    [jacobian(A_CoMp(1:3, 4), x)*dx; Tools.skew(reshape(jacobian(reshape(A_CoMp(1:3, 1:3), [9, 1]), x)*dx, [3, 3])*R.')]});
+                vw_CoM{k, 2} = Function(['vw_CoMfun_' num2str(k)], {[x; dx]}, { ...
+                    [jacobian(A_CoMc(1:3, 4), x)*dx; Tools.skew(reshape(jacobian(reshape(A_CoMc(1:3, 1:3), [9, 1]), x)*dx, [3, 3])*R.')]});
+            end
+
+            obj.vw_genFun = vw; obj.vw_CoMgenFun = vw_CoM;
         end
 
         % ------------------------- %
@@ -297,7 +406,7 @@ classdef Arm < handle_light
             %
             % Syntax
             %   cmpATree
-            %   cmpTree(1)
+            %   cmpATree(1)
             %       (Despite working with othr numbers the correct
             %       behaviours is obtained when called with 1)
 
@@ -347,74 +456,7 @@ classdef Arm < handle_light
     % ---------------- Get/set fun. -------------------- %
 
     methods
-        function A = get.A_genFun(obj)
-            % Return A joint's homogeneous matrix funtions (casADi) w.r.t. controllable joints
-            
-            arguments, obj Arm, end
-            
-            import casadi.*
-            A = cell(size(obj.linksName));
-            obj.cmpATree(1)
-            
-            children = obj.links(1).child;
-            mask = eye(length(obj.linksName));
-            while ~isempty(children)
-                for k = 1:length(children)
-                    mask(children(k), obj.links(children(k)).parent) = true;
-                    mask(children(k), :) = mask(children(k), :) | mask(obj.links(children(k)).parent, :);
-                end
-                children = [obj.links(children).child];
-            end
-            
-            joints = [obj.links.joint];
-            x = MX.sym('x', [sum(~strcmp({joints.type}, 'fixed')), 1]);
-            x_ext = MX.zeros([length(obj.linksName), 1]);
-            x_ext(find(~strcmp({joints.type}, 'fixed'), length(x))) = x;
-
-            for k = 1:length(obj.linksName)
-                A{k} = Function(['A_fun', num2str(k)], {x}, ...
-                    {obj.links(k).joint.A(x_ext(find(mask(k, :), sum(mask(k, :)))))});
-            end
-        end
-
-        % ------------------------- %
-
-        function A_CoM = get.A_CoMgenFun(obj)
-            % Return A CoM's homogeneous matrix funtions (casADi) w.r.t. controllable joints
-            
-            arguments, obj Arm, end
-            
-            import casadi.*
-            A_CoM = cell(length(obj.linksName), 2);
-            obj.cmpATree(1)
-            
-            children = obj.links(1).child;
-            mask = eye(length(obj.linksName));
-            while ~isempty(children)
-                for k = 1:length(children)
-                    mask(children(k), obj.links(children(k)).parent) = true;
-                    mask(children(k), :) = mask(children(k), :) | mask(obj.links(children(k)).parent, :);
-                end
-                children = [obj.links(children).child];
-            end
-            mask_p = mask - eye(length(obj.linksName));
-            
-            joints = [obj.links.joint];
-            x = MX.sym('x', [sum(~strcmp({joints.type}, 'fixed')), 1]);
-            x_ext = MX.zeros([length(obj.linksName), 1]);
-            x_ext(find(~strcmp({joints.type}, 'fixed'), length(x))) = x;
-
-            for k = 1:length(obj.linksName)
-                A_CoMp = obj.links(k).A_CoM{1}; A_CoMj = obj.links(k).A_CoM{2};
-                if sum(mask_p(k, :))
-                A_CoM{k, 1} = Function(['A_CoMfun_', num2str(k)], {x}, ...
-                    {A_CoMp(x_ext(find(mask_p(k, :), sum(mask_p(k, :)))))});
-                else, A_CoM{k, 1} = Function(['A_CoMfun_', num2str(k)], {x}, {A_CoMp});
-                end
-                A_CoM{k, 2} = Function(['A_CoMfun_', num2str(k)], {x}, ...
-                    {A_CoMj(x_ext(find(mask(k, :), sum(mask(k, :)))))});
-            end
-        end
+        
     end
 
 

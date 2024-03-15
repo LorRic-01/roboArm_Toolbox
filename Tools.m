@@ -25,7 +25,7 @@ classdef Tools
     %   plotFrames - Plot frame, passed as homogeneous matrix
     %   plotTri - Plot triangulation
     %   rotTra - Check or generate roto-translation from data
-    %   skew - Convert a 3d vector in its skew symmetric matrix representation
+    %   skew - Convert a 3d vector in its skew sym matrix and vice versa
 
 
     properties (Constant = true, Access = private, Hidden = true)
@@ -908,26 +908,28 @@ classdef Tools
         % ------------------------- %
 
         function A = skew(w)
-            % skew - Convert a 3d vector in its skew symmetric matrix representation
+            % skew - Convert a 3d vector in its skew sym matrix and vice versa
+            %   (No symmetricity check)
             %
             % Syntax
             %   A = skew(w)
+            %   w = skew(A)
             %
             % Input:
             %   w - Vector
-            %       ...(3, 1) or ...(1, 3)
-            %   Validation: mustHaveSize(..., [3, 1]) OR mustHaveSize(..., [1, 3])
+            %       ...(3, 1) or ...(1, 3) or ...(3, 3)
+            %   Validation: mustHaveSize(..., [3, 1]) OR mustHaveSize(...,[1, 3]) OR mustHaveSize(..., [3, 3])
             % Output:
             %   A - Skew symmetric matrix
-            %       ...(3, 3)
+            %       ...(3, 3) or ...(3, 1)
             %
             % See also Tools.mustHaveSize, Tools.mustAndOr
 
-            arguments, w {Tools.mustAndOr('or', w, 'mustHaveSize', [3, 1], 'mustHaveSize', [1, 3])}, end
-            if size(w, 1) ~= 1, w = w.'; end
-            Tools.mustHaveSize(w, [1, 3])
-
-            A = [[0 -w(3), w(2)]; [w(3), 0, -w(1)]; [-w(2), w(1), 0]];
+            arguments, w {Tools.mustAndOr('or', w, 'mustHaveSize', [3, 1], 'mustHaveSize', [1, 3], 'mustHaveSize', [3, 3])}, end
+            
+            if all(size(w) == 3), A = [w(3, 2); w(1, 3); w(2, 1)];
+            else, A = [[0 -w(3), w(2)]; [w(3), 0, -w(1)]; [-w(2), w(1), 0]];
+            end
         end
 
         % ------------------------- %
